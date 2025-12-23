@@ -7,23 +7,24 @@ https://github.com/flipperdevices/flipperzero-protobuf
 Uses generated protobuf code from proto/ directory.
 """
 
-import struct
+import os
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from .transport.base import FlipperTransport
 
 # Import generated protobuf classes
 try:
-    from .protobuf_gen import flipper_pb2, system_pb2, property_pb2
+    from .protobuf_gen import flipper_pb2, system_pb2, property_pb2, storage_pb2
     PROTOBUF_AVAILABLE = True
 except ImportError:
     PROTOBUF_AVAILABLE = False
     if TYPE_CHECKING:
         # For type checking only
-        from .protobuf_gen import flipper_pb2, system_pb2, property_pb2
+        from .protobuf_gen import flipper_pb2, system_pb2, property_pb2, storage_pb2
     else:
         flipper_pb2 = None
         system_pb2 = None
         property_pb2 = None
+        storage_pb2 = None
 
 
 class ProtobufRPC:
@@ -46,11 +47,206 @@ class ProtobufRPC:
         
         self.transport = transport
         self.command_id = 0
+        self.debug = os.environ.get("FLIPPER_DEBUG", "").lower() in ("1", "true", "yes", "on")
+        self._rpc_session_started = False
     
     def _get_next_command_id(self) -> int:
         """Get next command ID for RPC calls."""
         self.command_id = (self.command_id + 1) % 0xFFFFFFFF
         return self.command_id
+
+    @staticmethod
+    def _encode_varint(n: int) -> bytes:
+        out = bytearray()
+        while True:
+            b = n & 0x7F
+            n >>= 7
+            if n:
+                out.append(b | 0x80)
+            else:
+                out.append(b)
+                break
+        return bytes(out)
+
+    async def _read_varint(self, timeout: float = 2.5) -> Optional[int]:
+        """
+        Read a protobuf varint from the transport.
+
+        Flipper firmware uses nanopb's PB_ENCODE_DELIMITED / PB_DECODE_DELIMITED,
+        meaning each message is encoded as: [varint length][protobuf bytes].
+        """
+        try:
+            value = 0
+            shift = 0
+            # Varint for message sizes should be small; cap at 5 bytes (32-bit).
+            for _ in range(5):
+                b = await self.transport.receive_exact(1, timeout=timeout)
+                if not b:
+                    return None
+                byte = b[0]
+                value |= (byte & 0x7F) << shift
+                if not (byte & 0x80):
+                    return value
+                shift += 7
+            return None
+        except Exception:
+            return None
+
+    async def _receive_main_message(self, timeout: float = 2.5) -> Optional[Any]:  # Optional[flipper_pb2.Main]
+        """Receive one nanopb-delimited Main message: [varint length][payload]."""
+        try:
+            payload_len = await self._read_varint(timeout=timeout)
+            if payload_len is None or payload_len <= 0 or payload_len > 1_000_000:
+                return None
+
+            payload = await self.transport.receive_exact(payload_len, timeout=timeout)
+            if not payload or len(payload) != payload_len:
+                return None
+
+            if self.debug:
+                print(f"[protobuf] rx delimited len={payload_len}")
+
+            msg = flipper_pb2.Main()
+            msg.ParseFromString(payload)
+            return msg
+        except Exception:
+            return None
+
+    async def _ensure_rpc_session_started(self) -> None:
+        """
+        Ensure the device is in RPC session mode.
+
+        On firmware 1.4.3, the USB CDC port starts in CLI mode. The CLI command
+        `start_rpc_session` switches the same port into nanopb-delimited RPC mode.
+
+        Important detail: send the command terminated by CR-only ('\\r'), not CRLF,
+        otherwise the trailing '\\n' can be consumed as the first byte of the first
+        delimited message length and cause an immediate ERROR_DECODE + session close.
+        """
+        if self._rpc_session_started:
+            return
+
+        async def drain_host_rx(max_seconds: float = 0.6) -> None:
+            """
+            Drain any pending device->host bytes (CLI banner/prompt/echo).
+
+            If we don't drain this before the first RPC call, we may misinterpret
+            CLI output bytes as the first RPC response varint length prefix.
+            """
+            try:
+                import time
+
+                end = time.monotonic() + max_seconds
+                while time.monotonic() < end:
+                    chunk = await self.transport.receive(timeout=0.05)
+                    if not chunk:
+                        # Keep draining until the deadline to avoid stopping in the middle
+                        # of a multi-chunk CLI banner/echo.
+                        time.sleep(0.01)
+                        continue
+            except Exception:
+                pass
+
+        # Best-effort: clear any buffered host-side bytes.
+        try:
+            self.transport.clear_receive_buffer()
+        except Exception:
+            pass
+
+        # Give the device a moment to finish emitting the CLI banner/prompt after opening the port.
+        try:
+            import asyncio
+            await asyncio.sleep(0.3)
+        except Exception:
+            pass
+
+        async def probe_rpc(timeout: float = 0.4) -> bool:
+            """
+            Best-effort probe: send a protobuf ping request and see if we get a valid
+            nanopb-delimited PB.Main ping response back.
+
+            This is safer than trying to infer mode from idle output, because the CLI can
+            be silent until the first keystroke.
+            """
+            try:
+                # Clear any pending bytes so we only look at the probe response.
+                try:
+                    self.transport.clear_receive_buffer()
+                except Exception:
+                    pass
+                await drain_host_rx(max_seconds=0.2)
+
+                probe = flipper_pb2.Main()
+                probe.command_id = 1
+                probe.has_next = False
+                probe.system_ping_request.CopyFrom(system_pb2.PingRequest(data=b"mcp"))
+                payload = probe.SerializeToString()
+                await self.transport.send(self._encode_varint(len(payload)) + payload)
+
+                # Read a single chunk and attempt to parse a delimited message.
+                raw = await self.transport.receive(timeout=timeout)
+                if not raw:
+                    return False
+
+                # Decode varint length from raw[0:].
+                ln = 0
+                shift = 0
+                i = 0
+                for _ in range(5):
+                    if i >= len(raw):
+                        return False
+                    b = raw[i]
+                    i += 1
+                    ln |= (b & 0x7F) << shift
+                    if not (b & 0x80):
+                        break
+                    shift += 7
+                else:
+                    return False
+
+                if ln <= 0 or ln > 1_000_000:
+                    return False
+                if len(raw) < i + ln:
+                    # Not enough for full message; don't block here.
+                    return False
+
+                msg = flipper_pb2.Main()
+                msg.ParseFromString(raw[i : i + ln])
+                return msg.HasField("system_ping_response") and msg.system_ping_response.data == b"mcp"
+            except Exception:
+                # If we probed while in CLI mode, the device may have emitted text output;
+                # drain it so it doesn't interfere with subsequent session negotiation.
+                await drain_host_rx(max_seconds=0.5)
+                return False
+
+        force_start = os.environ.get("FLIPPER_FORCE_START_RPC_SESSION", "").lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+
+        if not force_start:
+            if await probe_rpc(timeout=0.4):
+                self._rpc_session_started = True
+                return
+
+        # Switch to RPC mode via CLI command (CR-only) and drain echo.
+        try:
+            # Cancel any partially typed CLI input that could prevent the command
+            # from being recognized (the CLI may remain open across host reconnects).
+            await self.transport.send(b"\x03\r")
+            await self.transport.send(b"start_rpc_session\r")
+        except Exception:
+            pass
+
+        await drain_host_rx(max_seconds=0.4)
+        try:
+            self.transport.clear_receive_buffer()
+        except Exception:
+            pass
+
+        self._rpc_session_started = True
     
     async def _send_rpc_message(
         self, 
@@ -70,68 +266,43 @@ class ProtobufRPC:
             Main response message or None
         """
         try:
+            await self._ensure_rpc_session_started()
+
             # Serialize Main message
             message_data = main_message.SerializeToString()
-            
-            # Prepend message length (4 bytes, big-endian)
-            message = struct.pack('>I', len(message_data)) + message_data
+
+            # Nanopb-delimited framing: [varint length][payload]
+            message = self._encode_varint(len(message_data)) + message_data
             
             # Send message
             await self.transport.send(message)
             
-            # Receive response with timeout
-            # Read length (4 bytes) - use shorter timeout
-            import asyncio
-            try:
-                length_bytes = await asyncio.wait_for(
-                    self.transport.receive(timeout=2.0),
-                    timeout=2.5
-                )
-            except (asyncio.TimeoutError, Exception):
-                return None
-            
-            if not length_bytes or len(length_bytes) < 4:
-                return None
-            
-            response_length = struct.unpack('>I', length_bytes[:4])[0]
-            if response_length == 0 or response_length > 1000000:  # Sanity check
-                return None
-            
-            # Read response data with timeout
-            try:
-                response = await asyncio.wait_for(
-                    self.transport.receive(timeout=2.0),
-                    timeout=2.5
-                )
-            except (asyncio.TimeoutError, Exception):
-                return None
-            
-            if len(response) < (response_length - 4):
-                # Need to read more
-                try:
-                    remaining = response_length - 4 - len(response)
-                    additional = await asyncio.wait_for(
-                        self.transport.receive(timeout=2.0),
-                        timeout=2.5
-                    )
-                    response = response + additional
-                except (asyncio.TimeoutError, Exception):
-                    # Partial response - try to parse what we have
-                    pass
-            
-            response_data = response[:(response_length - 4)] if len(response) >= (response_length - 4) else response
-            
-            if not response_data:
-                return None
-            
-            # Parse Main message
-            main_response = flipper_pb2.Main()
-            main_response.ParseFromString(response_data)
-            
-            return main_response
+            # Receive one response Main message
+            return await self._receive_main_message(timeout=2.5)
             
         except Exception:
             return None
+
+    async def ping(self, data: bytes = b"ping") -> Optional[bytes]:
+        """
+        Send a protobuf ping request.
+
+        Returns the echoed bytes (if any) or None on failure.
+        """
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            ping_req = system_pb2.PingRequest()
+            ping_req.data = data
+            main_request.system_ping_request.CopyFrom(ping_req)
+
+            resp = await self._send_rpc_message(main_request)
+            if resp and resp.command_status == flipper_pb2.CommandStatus.OK and resp.HasField("system_ping_response"):
+                return resp.system_ping_response.data
+        except Exception:
+            pass
+        return None
     
     async def get_device_info(self) -> Dict[str, Any]:
         """
@@ -148,7 +319,7 @@ class ProtobufRPC:
         # Add overall timeout to prevent hanging
         import asyncio
         try:
-            return await asyncio.wait_for(self._get_device_info_internal(), timeout=3.0)
+            return await asyncio.wait_for(self._get_device_info_internal(), timeout=6.0)
         except (asyncio.TimeoutError, Exception):
             return info
     
@@ -160,7 +331,6 @@ class ProtobufRPC:
             # Build Main message with DeviceInfoRequest
             main_request = flipper_pb2.Main()
             main_request.command_id = self._get_next_command_id()
-            main_request.command_status = flipper_pb2.CommandStatus.OK
             main_request.has_next = False
             main_request.system_device_info_request.CopyFrom(system_pb2.DeviceInfoRequest())
             
@@ -182,36 +352,10 @@ class ProtobufRPC:
                 while main_response.has_next and iteration < max_iterations:
                     iteration += 1
                     try:
-                        # Read next response with timeout
-                        import asyncio
-                        length_bytes = await asyncio.wait_for(
-                            self.transport.receive(timeout=2.0),
-                            timeout=2.5
-                        )
-                        if not length_bytes or len(length_bytes) < 4:
+                        next_response = await self._receive_main_message(timeout=2.5)
+                        if not next_response:
                             break
-                        
-                        response_length = struct.unpack('>I', length_bytes[:4])[0]
-                        if response_length == 0 or response_length > 1000000:
-                            break
-                        
-                        response = await asyncio.wait_for(
-                            self.transport.receive(timeout=2.0),
-                            timeout=2.5
-                        )
-                        if len(response) < (response_length - 4):
-                            remaining = response_length - 4 - len(response)
-                            additional = await asyncio.wait_for(
-                                self.transport.receive(timeout=2.0),
-                                timeout=2.5
-                            )
-                            response = response + additional
-                        
-                        response_data = response[:(response_length - 4)] if len(response) >= (response_length - 4) else response
-                        
-                        # Parse next Main message
-                        main_response = flipper_pb2.Main()
-                        main_response.ParseFromString(response_data)
+                        main_response = next_response
                         
                         if main_response.HasField('system_device_info_response'):
                             device_info = main_response.system_device_info_response
@@ -220,7 +364,7 @@ class ProtobufRPC:
                         
                         if main_response.command_status != flipper_pb2.CommandStatus.OK:
                             break
-                    except (asyncio.TimeoutError, Exception):
+                    except Exception:
                         # Timeout or error reading next response - stop collecting
                         break
                 
@@ -271,7 +415,6 @@ class ProtobufRPC:
             # Build Main message with Property.GetRequest
             main_request = flipper_pb2.Main()
             main_request.command_id = self._get_next_command_id()
-            main_request.command_status = flipper_pb2.CommandStatus.OK
             main_request.has_next = False
             
             # Set property_get_request
@@ -289,4 +432,135 @@ class ProtobufRPC:
         except Exception:
             pass
         
+        return None
+
+    async def storage_list(
+        self, path: str, include_md5: bool = False, filter_max_size: int = 0
+    ) -> list[str]:
+        """
+        List entries in a directory via protobuf storage_list_request.
+
+        Returns a list of names (files/dirs). If the device streams results using has_next,
+        we collect all frames.
+        """
+        names: list[str] = []
+        import asyncio
+        try:
+            return await asyncio.wait_for(
+                self._storage_list_internal(path, include_md5=include_md5, filter_max_size=filter_max_size),
+                timeout=3.0,
+            )
+        except Exception:
+            return names
+
+    async def _storage_list_internal(
+        self, path: str, include_md5: bool = False, filter_max_size: int = 0
+    ) -> list[str]:
+        names: list[str] = []
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+
+            req = storage_pb2.ListRequest()
+            req.path = path
+            req.include_md5 = include_md5
+            if filter_max_size:
+                req.filter_max_size = int(filter_max_size)
+            main_request.storage_list_request.CopyFrom(req)
+
+            main_response = await self._send_rpc_message(main_request)
+            if not main_response or main_response.command_status != flipper_pb2.CommandStatus.OK:
+                return names
+
+            def collect(resp: Any) -> None:
+                if resp.HasField("storage_list_response"):
+                    for f in resp.storage_list_response.file:
+                        if f.name:
+                            names.append(f.name)
+
+            collect(main_response)
+
+            max_iterations = 100
+            iteration = 0
+            while main_response.has_next and iteration < max_iterations:
+                iteration += 1
+                next_response = await self._receive_main_message(timeout=2.5)
+                if not next_response:
+                    break
+                main_response = next_response
+                if main_response.command_status != flipper_pb2.CommandStatus.OK:
+                    break
+                collect(main_response)
+
+        except Exception:
+            pass
+        return names
+
+    async def storage_read(self, path: str) -> bytes:
+        """
+        Read a file via protobuf storage_read_request.
+
+        Note: Some firmwares may stream large files or require chunking; this is a best-effort
+        read for small files where `ReadResponse.file.data` is populated.
+        """
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._storage_read_internal(path), timeout=3.0)
+        except Exception:
+            return b""
+
+    async def _storage_read_internal(self, path: str) -> bytes:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+
+            req = storage_pb2.ReadRequest()
+            req.path = path
+            main_request.storage_read_request.CopyFrom(req)
+
+            main_response = await self._send_rpc_message(main_request)
+            if (
+                main_response
+                and main_response.command_status == flipper_pb2.CommandStatus.OK
+                and main_response.HasField("storage_read_response")
+            ):
+                return bytes(main_response.storage_read_response.file.data)
+        except Exception:
+            pass
+        return b""
+
+    async def storage_info(self, path: str) -> Optional[tuple[int, int]]:
+        """
+        Query storage info for a path (e.g. /ext for SD card).
+
+        Returns (total_space, free_space) or None on failure.
+        """
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._storage_info_internal(path), timeout=3.0)
+        except Exception:
+            return None
+
+    async def _storage_info_internal(self, path: str) -> Optional[tuple[int, int]]:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+
+            req = storage_pb2.InfoRequest()
+            req.path = path
+            main_request.storage_info_request.CopyFrom(req)
+
+            main_response = await self._send_rpc_message(main_request)
+            if (
+                main_response
+                and main_response.command_status == flipper_pb2.CommandStatus.OK
+                and main_response.HasField("storage_info_response")
+            ):
+                r = main_response.storage_info_response
+                return int(r.total_space), int(r.free_space)
+        except Exception:
+            pass
         return None

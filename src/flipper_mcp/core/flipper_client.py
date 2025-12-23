@@ -163,19 +163,12 @@ class FlipperClient:
         
         # Initialize RPC client
         self.rpc = FlipperRPC(self.transport)
-        
-        # Test connection with ping
-        try:
-            # Give device a moment to initialize
-            import asyncio
-            await asyncio.sleep(0.5)
-            
-            # Try to ping (optional - may not work with all firmware versions)
-            # If ping fails, we still consider connected if transport is connected
-            await self.rpc.ping()
-        except Exception:
-            # Ping failed, but transport is connected - continue anyway
-            pass
+
+        # NOTE:
+        # Do not send any ad-hoc/binary "ping" bytes on connect.
+        # The Flipper USB CDC port typically starts in CLI mode and will interpret
+        # random binary framing as garbage input, which can break subsequent
+        # `start_rpc_session` negotiation for protobuf RPC.
         
         self.connected = True
         return True
@@ -288,47 +281,23 @@ class FlipperClient:
         if not self.connected:
             self._sd_card_available = False
             return False
-        
-        # Test SD card by trying to write and delete a test file
-        # This is more reliable than just listing, as listing may return empty
-        # even when SD card is not present
-        test_file_path = "/ext/.sd_card_test"
-        test_content = "sd_card_test"
-        
-        try:
-            # Try to write a test file
-            write_success = await self.storage.write(test_file_path, test_content)
-            if not write_success:
-                # Write failed - SD card not available
-                self._sd_card_available = False
-                return False
-            
-            # Try to read it back to verify it was actually written
-            # (some stub implementations might return True without actually writing)
+
+        # Prefer protobuf storage info when available; this is more reliable than write/read probes.
+        if self.rpc:
             try:
-                read_content = await self.storage.read(test_file_path)
-                if read_content != test_content:
-                    # Content doesn't match - write didn't actually work
-                    self._sd_card_available = False
-                    return False
+                storage_info = await self.rpc.storage_info("/ext")
+                if storage_info and storage_info.get("total_space", 0) > 0:
+                    self._sd_card_available = True
+                    return True
             except Exception:
-                # Can't read it back - write didn't actually work
-                self._sd_card_available = False
-                return False
-            
-            # Try to delete the test file
-            try:
-                await self.storage.delete(test_file_path)
-            except Exception:
-                # Deletion failed, but that's okay - we verified write worked
                 pass
-            
-            # All checks passed - SD card is available
-            self._sd_card_available = True
-            return True
-            
+
+        # Fallback: list /ext (can be empty even when SD is present, so this is weaker).
+        try:
+            files = await self.storage.list("/ext")
+            self._sd_card_available = files is not None
+            return bool(files)
         except Exception:
-            # Any error during write/read/delete means SD card is not available
             self._sd_card_available = False
             return False
     

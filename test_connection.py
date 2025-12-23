@@ -10,6 +10,7 @@ This script tests:
 
 import asyncio
 import sys
+import os
 from pathlib import Path
 
 # Try to import directly - if package is installed, this will work
@@ -36,11 +37,12 @@ async def test_connection():
     print()
     
     # Configuration
+    port_override = os.environ.get("FLIPPER_PORT")
     config = {
         "transport": {
             "type": "usb",
             "usb": {
-                # Port will be auto-detected
+                **({"port": port_override} if port_override else {}),
                 "baudrate": 115200,
                 "timeout": 2.0
             }

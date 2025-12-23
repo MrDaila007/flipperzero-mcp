@@ -10,6 +10,7 @@ This script tests the systeminfo module by:
 
 import asyncio
 import sys
+import os
 from pathlib import Path
 
 # Add src to path
@@ -30,10 +31,12 @@ async def test_systeminfo_module():
     print()
     
     # Configuration
+    port_override = os.environ.get("FLIPPER_PORT")
     config = {
         "transport": {
             "type": "usb",
             "usb": {
+                **({"port": port_override} if port_override else {}),
                 "baudrate": 115200,
                 "timeout": 2.0
             }

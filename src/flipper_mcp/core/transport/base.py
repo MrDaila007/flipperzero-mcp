@@ -2,6 +2,8 @@
 
 from abc import ABC, abstractmethod
 from typing import Optional
+import time
+import asyncio
 
 
 class FlipperTransport(ABC):
@@ -23,6 +25,8 @@ class FlipperTransport(ABC):
         """
         self.config = config
         self.connected = False
+        # Buffer for deterministic framed reads (e.g. protobuf length-prefix protocol)
+        self._rx_buffer = bytearray()
     
     @abstractmethod
     async def connect(self) -> bool:
@@ -61,6 +65,55 @@ class FlipperTransport(ABC):
             Received bytes
         """
         pass
+
+    async def receive_exact(self, n: int, timeout: Optional[float] = None) -> bytes:
+        """
+        Receive exactly N bytes, buffering any extra data for subsequent reads.
+
+        This is required for protocols that use explicit framing (e.g. 4-byte length
+        prefix + payload). Underlying transports may return arbitrary chunk sizes.
+
+        Args:
+            n: Number of bytes to read
+            timeout: Optional overall timeout in seconds
+
+        Returns:
+            Exactly N bytes, or b"" if timeout/EOF occurs before N bytes are available.
+        """
+        if n <= 0:
+            return b""
+
+        deadline: float | None = None
+        if timeout is not None:
+            deadline = time.monotonic() + timeout
+
+        while len(self._rx_buffer) < n:
+            remaining: Optional[float]
+            if deadline is None:
+                remaining = None
+            else:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+
+            chunk = await self.receive(timeout=remaining)
+            if not chunk:
+                # Avoid tight loop if transport returns empty on timeout.
+                if deadline is None:
+                    await asyncio.sleep(0)
+                continue
+            self._rx_buffer.extend(chunk)
+
+        if len(self._rx_buffer) < n:
+            return b""
+
+        out = bytes(self._rx_buffer[:n])
+        del self._rx_buffer[:n]
+        return out
+
+    def clear_receive_buffer(self) -> None:
+        """Clear any buffered received bytes."""
+        self._rx_buffer.clear()
     
     @abstractmethod
     async def is_connected(self) -> bool:

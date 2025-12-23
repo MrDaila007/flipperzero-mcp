@@ -27,7 +27,10 @@ class USBTransport(FlipperTransport):
             config: USB configuration with 'port' and 'baudrate'
         """
         super().__init__(config)
-        self.port = config.get("port", self._auto_detect_port())
+        # IMPORTANT: dict.get(default=...) eagerly evaluates the default, which would
+        # auto-detect even when an explicit port was provided. Keep this lazy.
+        configured_port = config.get("port")
+        self.port = configured_port if configured_port else self._auto_detect_port()
         self.baudrate = config.get("baudrate", 115200)
         self.timeout = config.get("timeout", 1.0)
         self.serial: Optional[serial.Serial] = None
@@ -63,15 +66,15 @@ class USBTransport(FlipperTransport):
                 is_flipper = True
             
             if is_flipper:
-                # On macOS, prefer tty.* for serial communication (cu.* is for call-out)
-                # But try both if available
+                # On macOS, prefer cu.* for initiating outgoing serial connections.
+                # (tty.* is typically for incoming/call-in.)
                 if system == "Darwin":
-                    if device.startswith("/dev/cu."):
-                        # Try tty.* version first (better for serial I/O)
-                        tty_device = device.replace("/dev/cu.", "/dev/tty.")
+                    if device.startswith("/dev/tty."):
+                        # Prefer cu.* version if available
+                        cu_device = device.replace("/dev/tty.", "/dev/cu.")
                         import os
-                        if os.path.exists(tty_device):
-                            device = tty_device
+                        if os.path.exists(cu_device):
+                            device = cu_device
                 
                 detected_ports.append((device, port))
         

@@ -50,6 +50,17 @@ class FlipperRPC:
         if PROTOBUF_RPC_AVAILABLE:
             # Don't initialize yet - do it lazily on first use
             pass
+
+    def _ensure_protobuf_rpc(self) -> None:
+        """Initialize protobuf RPC client once (best-effort)."""
+        if not PROTOBUF_RPC_AVAILABLE or self._protobuf_rpc_initialized:
+            return
+        try:
+            self.protobuf_rpc = ProtobufRPC(self.transport)
+        except Exception:
+            self.protobuf_rpc = None
+        finally:
+            self._protobuf_rpc_initialized = True
     
     async def send_command(self, command: str, data: bytes = b"") -> bytes:
         """
@@ -143,12 +154,7 @@ class FlipperRPC:
         
         # Try protobuf RPC first (proper implementation)
         # Initialize lazily on first use
-        if PROTOBUF_RPC_AVAILABLE and not self._protobuf_rpc_initialized:
-            try:
-                self.protobuf_rpc = ProtobufRPC(self.transport)
-                self._protobuf_rpc_initialized = True
-            except Exception:
-                self._protobuf_rpc_initialized = True  # Mark as tried to avoid retrying
+        self._ensure_protobuf_rpc()
         
         if self.protobuf_rpc:
             try:
@@ -156,22 +162,33 @@ class FlipperRPC:
                 import asyncio
                 protobuf_info = await asyncio.wait_for(
                     self.protobuf_rpc.get_device_info(),
-                    timeout=3.0
+                    timeout=6.0
                 )
                 if protobuf_info:
-                    # Map protobuf response to our info structure
-                    for key, value in protobuf_info.items():
-                        key_lower = key.lower()
-                        if 'firmware' in key_lower or 'version' in key_lower:
-                            info["firmware"] = value
-                            info["firmware_version"] = value
-                        elif 'hardware' in key_lower or 'model' in key_lower:
-                            info["hardware"] = value
-                            info["hardware_model"] = value
-                        elif 'serial' in key_lower:
-                            info["serial_number"] = value
-                        elif 'name' in key_lower or 'device' in key_lower:
-                            info["name"] = value
+                    # Map protobuf response to our info structure using known keys.
+                    # NOTE: The device_info map also contains protobuf_version_* keys
+                    # which we must NOT treat as firmware version.
+                    fw = (
+                        protobuf_info.get("firmware_version")
+                        or protobuf_info.get("firmware_branch")
+                        or protobuf_info.get("firmware_commit")
+                    )
+                    if fw:
+                        info["firmware"] = fw
+                        info["firmware_version"] = fw
+
+                    hw = protobuf_info.get("hardware_model") or protobuf_info.get("hardware_ver")
+                    if hw:
+                        info["hardware"] = hw
+                        info["hardware_model"] = hw
+
+                    name = protobuf_info.get("hardware_name") or protobuf_info.get("device_name")
+                    if name:
+                        info["name"] = name
+
+                    serial = protobuf_info.get("serial_number") or protobuf_info.get("hardware_uid")
+                    if serial:
+                        info["serial_number"] = serial
                     
                     # If we got useful info, return it
                     if info.get("firmware") != "Unknown" or info.get("firmware_version"):
@@ -416,6 +433,14 @@ class FlipperRPC:
         Returns:
             List of filenames
         """
+        self._ensure_protobuf_rpc()
+        # Prefer protobuf storage API if available (proper protocol)
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.storage_list(path)
+            except Exception:
+                pass
+
         try:
             # Try RPC command first
             path_bytes = path.encode('utf-8')
@@ -455,6 +480,16 @@ class FlipperRPC:
         Returns:
             File contents as string
         """
+        self._ensure_protobuf_rpc()
+        # Prefer protobuf storage API if available (proper protocol)
+        if self.protobuf_rpc:
+            try:
+                data = await self.protobuf_rpc.storage_read(path)
+                if data:
+                    return data.decode("utf-8", errors="ignore")
+            except Exception:
+                pass
+
         try:
             # Try RPC command first
             path_bytes = path.encode('utf-8')
@@ -467,6 +502,24 @@ class FlipperRPC:
         
         # Fallback: try CLI approach
         return await self._storage_read_via_cli(path)
+
+    async def storage_info(self, path: str) -> Optional[Dict[str, int]]:
+        """
+        Query storage info (total/free space) for a given path via protobuf.
+
+        Returns:
+            Dict with total_space/free_space or None if unavailable.
+        """
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                info = await self.protobuf_rpc.storage_info(path)
+                if info:
+                    total, free = info
+                    return {"total_space": total, "free_space": free}
+            except Exception:
+                pass
+        return None
     
     async def _storage_read_via_cli(self, path: str) -> str:
         """

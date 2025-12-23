@@ -1,6 +1,7 @@
 """Main Flipper MCP server implementation."""
 
 import asyncio
+import os
 from typing import Any, Sequence
 
 from mcp.server import Server
@@ -177,11 +178,14 @@ async def main() -> None:
     """
     # Default configuration
     # In production, this would be loaded from a config file
+    env_transport = os.environ.get("FLIPPER_TRANSPORT")
+    env_port = os.environ.get("FLIPPER_PORT")
     config = {
         "transport": {
-            "type": "usb",  # or "wifi", "bluetooth"
+            "type": env_transport or "usb",  # or "wifi", "bluetooth"
             "usb": {
-                "port": "/dev/ttyACM0",  # Auto-detect if not specified
+                # Auto-detect if not specified; can be overridden via FLIPPER_PORT
+                **({"port": env_port} if env_port else {}),
                 "baudrate": 115200
             },
             "wifi": {
