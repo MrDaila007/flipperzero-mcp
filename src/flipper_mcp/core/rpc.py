@@ -520,6 +520,36 @@ class FlipperRPC:
             except Exception:
                 pass
         return None
+
+    async def storage_mkdir(self, path: str) -> bool:
+        """Create a directory via protobuf storage API (best-effort)."""
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.storage_mkdir(path)
+            except Exception:
+                return False
+        return False
+
+    async def storage_delete(self, path: str, recursive: bool = False) -> bool:
+        """Delete a file/dir via protobuf storage API (best-effort)."""
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.storage_delete(path, recursive=recursive)
+            except Exception:
+                return False
+        return False
+
+    async def storage_write(self, path: str, content: str) -> bool:
+        """Write a file via protobuf storage API (best-effort)."""
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.storage_write(path, content.encode("utf-8"))
+            except Exception:
+                return False
+        return False
     
     async def _storage_read_via_cli(self, path: str) -> str:
         """

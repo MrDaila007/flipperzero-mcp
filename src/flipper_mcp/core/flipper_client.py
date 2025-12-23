@@ -54,8 +54,9 @@ class FlipperStorage:
         Returns:
             True if successful
         """
-        # Stub: In real implementation, would use Flipper RPC protocol
-        return True
+        if not self.client.rpc:
+            return False
+        return await self.client.rpc.storage_write(path, content)
     
     async def delete(self, path: str) -> bool:
         """
@@ -67,8 +68,9 @@ class FlipperStorage:
         Returns:
             True if successful
         """
-        # Stub: In real implementation, would use Flipper RPC protocol
-        return True
+        if not self.client.rpc:
+            return False
+        return await self.client.rpc.storage_delete(path)
     
     async def mkdir(self, path: str) -> bool:
         """
@@ -80,8 +82,9 @@ class FlipperStorage:
         Returns:
             True if successful
         """
-        # Stub: In real implementation, would use Flipper RPC protocol
-        return True
+        if not self.client.rpc:
+            return False
+        return await self.client.rpc.storage_mkdir(path)
 
 
 class FlipperApp:

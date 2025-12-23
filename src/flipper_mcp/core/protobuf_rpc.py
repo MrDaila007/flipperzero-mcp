@@ -564,3 +564,75 @@ class ProtobufRPC:
         except Exception:
             pass
         return None
+
+    async def storage_mkdir(self, path: str) -> bool:
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._storage_mkdir_internal(path), timeout=3.0)
+        except Exception:
+            return False
+
+    async def _storage_mkdir_internal(self, path: str) -> bool:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+
+            req = storage_pb2.MkdirRequest()
+            req.path = path
+            main_request.storage_mkdir_request.CopyFrom(req)
+
+            main_response = await self._send_rpc_message(main_request)
+            return bool(main_response and main_response.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
+
+    async def storage_delete(self, path: str, recursive: bool = False) -> bool:
+        import asyncio
+        try:
+            return await asyncio.wait_for(
+                self._storage_delete_internal(path, recursive=recursive), timeout=3.0
+            )
+        except Exception:
+            return False
+
+    async def _storage_delete_internal(self, path: str, recursive: bool = False) -> bool:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+
+            req = storage_pb2.DeleteRequest()
+            req.path = path
+            req.recursive = recursive
+            main_request.storage_delete_request.CopyFrom(req)
+
+            main_response = await self._send_rpc_message(main_request)
+            return bool(main_response and main_response.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
+
+    async def storage_write(self, path: str, content: bytes) -> bool:
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._storage_write_internal(path, content), timeout=3.0)
+        except Exception:
+            return False
+
+    async def _storage_write_internal(self, path: str, content: bytes) -> bool:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+
+            req = storage_pb2.WriteRequest()
+            req.path = path
+            f = storage_pb2.File()
+            f.data = content
+            req.file.CopyFrom(f)
+            main_request.storage_write_request.CopyFrom(req)
+
+            main_response = await self._send_rpc_message(main_request)
+            return bool(main_response and main_response.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
