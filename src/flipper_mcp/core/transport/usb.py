@@ -7,6 +7,10 @@ import serial.tools.list_ports
 
 from .base import FlipperTransport
 
+# Flipper Zero USB VID:PID
+FLIPPER_VID = 0x0483  # STMicroelectronics
+FLIPPER_PID = 0x5740  # Virtual COM Port
+
 
 class USBTransport(FlipperTransport):
     """
@@ -40,7 +44,7 @@ class USBTransport(FlipperTransport):
         for port in ports:
             # Flipper Zero VID:PID or description match
             if "Flipper" in str(port.description) or \
-               (port.vid == 0x0483 and port.pid == 0x5740):  # STM32 VID:PID
+               (port.vid == FLIPPER_VID and port.pid == FLIPPER_PID):
                 return port.device
         
         # Default fallback

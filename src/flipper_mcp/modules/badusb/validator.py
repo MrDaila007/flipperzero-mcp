@@ -4,6 +4,14 @@ import re
 from typing import Tuple
 
 
+# NOTE: This is a basic pattern-matching validator for demonstration.
+# In production, consider:
+# - Semantic analysis of script intent
+# - Sandboxed execution to detect behavior
+# - Machine learning-based classification
+# - User-defined safety policies
+# - Integration with security scanners
+
 class ScriptValidator:
     """
     Validates BadUSB scripts for safety.

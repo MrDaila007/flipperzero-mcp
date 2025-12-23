@@ -37,6 +37,7 @@ class FlipperMCPServer:
         self.app = Server("flipper-zero-mcp")
         self.flipper: FlipperClient | None = None
         self.registry: ModuleRegistry | None = None
+        self.stub_mode = False  # Whether running in stub mode (no real hardware)
         
         # Register MCP handlers
         self._register_handlers()
@@ -100,10 +101,14 @@ class FlipperMCPServer:
             print("❌ Failed to connect to Flipper Zero")
             print("\n⚠️  NOTE: This is a stub implementation.")
             print("   In production, ensure Flipper Zero is connected via USB/WiFi/BLE")
-            # Continue anyway for demonstration
-            self.flipper.connected = True
+            print("   Running in STUB MODE for demonstration purposes.")
+            # Enable stub mode instead of forcing connection
+            self.flipper.connected = True  # Stub mode
+            self.stub_mode = True
+        else:
+            self.stub_mode = False
         
-        print("✓ Connected to Flipper Zero")
+        print("✓ Connected to Flipper Zero" + (" (STUB MODE)" if self.stub_mode else ""))
         
         # Get device info
         try:
