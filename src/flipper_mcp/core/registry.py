@@ -6,7 +6,7 @@ import inspect
 import pkgutil
 
 from mcp.types import Tool, TextContent
-from .base_module import FlipperModule
+from ..modules.base_module import FlipperModule
 
 
 class ModuleRegistry:
