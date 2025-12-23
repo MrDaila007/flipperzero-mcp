@@ -1,6 +1,6 @@
 # Configuring Flipper Zero MCP Server for Claude
 
-This guide will walk you through setting up the Flipper Zero MCP server to work with Claude Desktop and other Claude AI assistants.
+This guide explains how to run the Flipper Zero MCP server and connect it to Claude Desktop.
 
 ## Table of Contents
 
@@ -27,7 +27,7 @@ Before you begin, ensure you have:
    - Bluetooth
 
 3. **Claude Desktop** installed (for Claude Desktop integration)
-   - Download from: https://claude.ai/download
+   - Download from: [claude.ai/download](https://claude.ai/download)
    - Or use Claude via API/other clients
 
 4. **Basic familiarity** with:
@@ -192,46 +192,24 @@ Here's a complete example configuration file with the Flipper Zero MCP server:
 
 The MCP server supports various configuration options through environment variables or a configuration file.
 
-### Environment Variables
+### Environment variables
 
-You can set these environment variables before starting the server:
+The server currently reads configuration from environment variables:
 
 ```bash
-# Set transport type (usb, wifi, bluetooth)
+# Set transport type (usb, wifi, bluetooth/ble)
 export FLIPPER_TRANSPORT=usb
 
-# Set USB port (Linux/macOS)
-export FLIPPER_USB_PORT=/dev/ttyACM0
-
-# Set WiFi host and port
-export FLIPPER_WIFI_HOST=192.168.1.1
-export FLIPPER_WIFI_PORT=8080
+# Override USB serial device path (only used for FLIPPER_TRANSPORT=usb)
+export FLIPPER_PORT=/dev/ttyACM0
 ```
 
-### Configuration File (Future)
+Notes:
 
-A `config.yaml` file in the project root can be used (when implemented):
-
-```yaml
-transport:
-  type: usb  # or wifi, bluetooth
-  
-  usb:
-    port: /dev/ttyACM0  # Auto-detected if not specified
-    baudrate: 115200
-  
-  wifi:
-    host: 192.168.1.1
-    port: 8080
-  
-  bluetooth:
-    address: null  # Auto-discover
-
-modules:
-  # Module-specific configuration
-  badusb:
-    # BadUSB module settings
-```
+- The current CLI implementation only wires `FLIPPER_TRANSPORT` and `FLIPPER_PORT` into the runtime configuration (`src/flipper_mcp/core/server.py`). If you need deeper configuration (WiFi host/port, Bluetooth address), update the `config` dict in `flipper_mcp.core.server.main()` or add CLI/config-file support.
+- Additional RPC debugging controls:
+  - `FLIPPER_DEBUG`: enable protobuf RPC debug logs (`1`, `true`, `yes`, `on`)
+  - `FLIPPER_FORCE_START_RPC_SESSION`: always send `start_rpc_session` on connect (`1`, `true`, `yes`, `on`)
 
 ## Verifying the Setup
 
@@ -259,11 +237,15 @@ Flipper Zero MCP Server - Modular Architecture
 📦 Discovering modules...
 ⚡ Loading modules...
 
-✓ 1 module(s) loaded, 5 tool(s) available
+✓ 3 module(s) loaded, 8 tool(s) available
 
 📋 Available modules:
    • badusb v1.0.0 - 5 tool(s)
-     BadUSB keyboard/mouse emulation with AI-powered script generation
+     BadUSB keyboard/mouse emulation with template-based script generation
+   • music v1.0.0 - 2 tool(s)
+     Play songs on Flipper Zero piezo speaker using FMF format
+   • systeminfo v1.0.0 - 1 tool(s)
+     Check Flipper Zero connection and retrieve system information
 
 ============================================================
 🚀 Server ready! Waiting for MCP connections...
@@ -279,11 +261,14 @@ What tools are available for working with Flipper Zero?
 ```
 
 Claude should respond with a list of available tools like:
+- `systeminfo_get` - Get system and storage information
 - `badusb_list` - List all BadUSB scripts
 - `badusb_read` - Read a script's contents
 - `badusb_generate` - Generate DuckyScript from description
 - `badusb_execute` - Execute a script
 - `badusb_workflow` - Complete generate→validate→save workflow
+- `music_get_format` - Get FMF format specification
+- `music_play` - Save and (optionally) play an FMF song
 
 ### Test 3: Simple Command
 
@@ -509,10 +494,10 @@ If you encounter issues not covered in this guide:
 
 1. Check the [Troubleshooting](#troubleshooting) section
 2. Review Claude Desktop logs for error messages
-3. Open an issue on GitHub: https://github.com/busse/flipperzero-mcp/issues
+3. Open an issue on GitHub: `https://github.com/busse/flipperzero-mcp/issues`
 4. Check existing issues and discussions
 
 ---
 
-**Happy hacking with Flipper Zero and Claude! 🐬🤖**
+If you run into problems, include your OS, Python version, transport type, and the server startup logs in your issue.
 

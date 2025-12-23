@@ -101,9 +101,4 @@ minimal_hello(name="Alice")
 
 ## Next Steps
 
-See `advanced_module` for:
-- Multiple tools
-- Flipper integration
-- Error handling
-- Configuration
-- Lifecycle hooks
+Use this as a starting point for building a new module package under `src/flipper_mcp/modules/`.

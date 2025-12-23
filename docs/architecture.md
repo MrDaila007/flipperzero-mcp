@@ -2,7 +2,7 @@
 
 ## System Design
 
-Flipper Zero MCP follows a **modular plugin architecture** inspired by Flipper's FAP (Flipper Application Package) system. The core principle is **separation of concerns**: the core handles protocol and infrastructure, while modules provide functionality.
+Flipper Zero MCP follows a modular plugin architecture: the core handles MCP protocol and device connectivity, while modules provide tools.
 
 ## Components
 
@@ -15,6 +15,8 @@ core/
 ├── server.py          # MCP protocol handler
 ├── registry.py        # Module discovery and management
 ├── flipper_client.py  # RPC client abstraction
+├── rpc.py             # RPC wrapper (protobuf-first)
+├── protobuf_rpc.py    # Protobuf RPC implementation (nanopb-delimited framing)
 ├── transport/         # Connection layer
 │   ├── base.py       # Abstract transport interface
 │   ├── usb.py        # USB serial implementation
@@ -39,12 +41,16 @@ Modules are self-contained plugins:
 ```
 modules/
 ├── base_module.py    # Abstract module interface
-├── badusb/          # BadUSB module (example)
+├── badusb/          # BadUSB module
 │   ├── module.py    # Module implementation
 │   ├── generator.py # DuckyScript generator
 │   ├── validator.py # Safety validator
 │   └── templates/   # Script templates
-└── [your_module]/   # Your custom module
+├── music/           # Music Player module
+│   ├── module.py
+│   └── formatter.py
+└── systeminfo/       # System info module
+    └── module.py
 ```
 
 **Module Interface:**
@@ -75,14 +81,14 @@ class FlipperTransport(ABC):
 **Implementations:**
 - **USB**: Serial port communication
 - **WiFi**: TCP/IP over ESP32 Dev Board
-- **Bluetooth**: BLE (future)
+- **Bluetooth**: present as a stub transport (not implemented)
 
 ## Data Flow
 
 ### Tool Execution Flow
 
 ```
-1. AI Assistant
+1. MCP client (e.g., Claude Desktop)
    │
    └──> MCP Protocol (stdio)
         │
@@ -102,7 +108,7 @@ class FlipperTransport(ABC):
                   │
                   └──> MCP Protocol
                        │
-                       └──> AI Assistant
+                       └──> MCP client
 ```
 
 ### Module Discovery Flow
@@ -112,11 +118,11 @@ class FlipperTransport(ABC):
    │
    └──> Module Registry
         │
-        ├──> Scan modules/ directory
+        ├──> Scan modules/ package
         │
         ├──> For each package:
-        │    ├──> Import module.py
-        │    ├──> Find FlipperModule subclasses
+        │    ├──> Import <package>.module
+        │    ├──> Find concrete FlipperModule subclasses
         │    └──> Instantiate module
         │
         ├──> Validate environment
@@ -158,23 +164,7 @@ class FlipperTransport(ABC):
 
 ## Module Communication
 
-Modules can access:
-
-1. **Flipper Client**
-   ```python
-   self.flipper.storage.list("/path")
-   self.flipper.app.launch("BadUsb", script_path)
-   ```
-
-2. **Other Modules** (via registry)
-   ```python
-   storage_module = self.registry.get_module("storage")
-   ```
-
-3. **Configuration**
-   ```python
-   self.config = config.get("mymodule", {})
-   ```
+Modules access the injected `FlipperClient` via `self.flipper` to perform operations (RPC queries, storage operations, launching apps).
 
 ## Security Model
 
@@ -247,57 +237,10 @@ class MyValidator:
 
 ## Configuration
 
-### Server Configuration
+The default server entry point builds a Python `config` dict in `flipper_mcp.core.server.main()` and supports environment variable overrides:
 
-```yaml
-transport:
-  type: usb
-  usb:
-    port: /dev/ttyACM0
-    baudrate: 115200
-
-modules:
-  badusb:
-    enabled: true
-    config:
-      default_os: windows
-```
-
-### Module Configuration
-
-Modules can read their config:
-
-```python
-class MyModule(FlipperModule):
-    def __init__(self, flipper_client, config=None):
-        self.config = config or {}
-        self.setting = self.config.get("my_setting", "default")
-```
-
-## Performance Considerations
-
-### Async Architecture
-
-- All I/O is async
-- Non-blocking transport operations
-- Concurrent tool execution
-
-### Caching
-
-```python
-from functools import lru_cache
-
-@lru_cache(maxsize=128)
-async def expensive_operation(self, param):
-    # Cached results
-    pass
-```
-
-### Resource Management
-
-- Connection pooling (future)
-- Lazy module loading (future)
-- Memory limits (future)
+- `FLIPPER_TRANSPORT`
+- `FLIPPER_PORT`
 
 ## Testing Strategy
 
@@ -325,32 +268,6 @@ async def test_with_hardware():
     # Test with actual device
     pass
 ```
-
-## Future Enhancements
-
-### Planned Features
-
-1. **Hot Module Reloading**
-   - Reload modules without restarting
-   - Development mode with auto-reload
-
-2. **Module Marketplace**
-   - Central registry of community modules
-   - Version management
-   - Dependency resolution
-
-3. **Permission System**
-   - Fine-grained access control
-   - User approval for dangerous operations
-
-4. **Event System**
-   - Modules emit/subscribe to events
-   - Inter-module communication
-
-5. **Web UI**
-   - Visual module management
-   - Real-time monitoring
-   - Script editor
 
 ## References
 
