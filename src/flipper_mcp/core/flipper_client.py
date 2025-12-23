@@ -2,6 +2,7 @@
 
 from typing import Any, Optional
 from .transport.base import FlipperTransport
+from .rpc import FlipperRPC
 
 
 class FlipperStorage:
@@ -24,8 +25,9 @@ class FlipperStorage:
         Returns:
             List of filenames
         """
-        # Stub: In real implementation, would use Flipper RPC protocol
-        return []
+        if not self.client.rpc:
+            return []
+        return await self.client.rpc.storage_list(path)
     
     async def read(self, path: str) -> str:
         """
@@ -37,8 +39,9 @@ class FlipperStorage:
         Returns:
             File contents as string
         """
-        # Stub: In real implementation, would use Flipper RPC protocol
-        return ""
+        if not self.client.rpc:
+            return ""
+        return await self.client.rpc.storage_read(path)
     
     async def write(self, path: str, content: str) -> bool:
         """
@@ -139,6 +142,7 @@ class FlipperClient:
         """
         self.transport = transport
         self.connected = False
+        self.rpc: Optional[FlipperRPC] = None
         
         # Sub-clients
         self.storage = FlipperStorage(self)
@@ -154,7 +158,22 @@ class FlipperClient:
         if not await self.transport.connect():
             return False
         
-        # TODO: Perform RPC handshake
+        # Initialize RPC client
+        self.rpc = FlipperRPC(self.transport)
+        
+        # Test connection with ping
+        try:
+            # Give device a moment to initialize
+            import asyncio
+            await asyncio.sleep(0.5)
+            
+            # Try to ping (optional - may not work with all firmware versions)
+            # If ping fails, we still consider connected if transport is connected
+            await self.rpc.ping()
+        except Exception:
+            # Ping failed, but transport is connected - continue anyway
+            pass
+        
         self.connected = True
         return True
     
@@ -170,8 +189,13 @@ class FlipperClient:
         Returns:
             Firmware version string
         """
-        # Stub: Would normally query via RPC
-        return "0.0.0-stub"
+        if self.rpc:
+            try:
+                info = await self.rpc.get_device_info()
+                return info.get("firmware", "Unknown")
+            except Exception:
+                pass
+        return "Unknown"
     
     async def get_device_info(self) -> dict[str, Any]:
         """
@@ -180,7 +204,13 @@ class FlipperClient:
         Returns:
             Device info dict
         """
-        # Stub: Would normally query via RPC
+        if self.rpc:
+            try:
+                return await self.rpc.get_device_info()
+            except Exception:
+                pass
+        
+        # Fallback
         return {
             "name": "Flipper Zero",
             "hardware": "Flipper Zero",

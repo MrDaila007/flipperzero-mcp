@@ -36,19 +36,62 @@ class USBTransport(FlipperTransport):
         """
         Auto-detect Flipper Zero USB port.
         
+        Supports both macOS (tty.usbmodem*) and Linux (ttyACM*, ttyUSB*).
+        
         Returns:
             Port path or default
         """
+        import platform
+        system = platform.system()
+        
         # Look for Flipper Zero USB device
         ports = serial.tools.list_ports.comports()
-        for port in ports:
-            # Flipper Zero VID:PID or description match
-            if "Flipper" in str(port.description) or \
-               (port.vid == FLIPPER_VID and port.pid == FLIPPER_PID):
-                return port.device
+        detected_ports = []
         
-        # Default fallback
-        return "/dev/ttyACM0"
+        for port in ports:
+            device = port.device
+            is_flipper = False
+            
+            # Flipper Zero VID:PID match (most reliable)
+            if port.vid == FLIPPER_VID and port.pid == FLIPPER_PID:
+                is_flipper = True
+            # Description match
+            elif "Flipper" in str(port.description):
+                is_flipper = True
+            # macOS-specific: check for usbmodem pattern with "flip" in name
+            elif system == "Darwin" and "usbmodem" in device.lower() and "flip" in device.lower():
+                is_flipper = True
+            
+            if is_flipper:
+                # On macOS, prefer tty.* for serial communication (cu.* is for call-out)
+                # But try both if available
+                if system == "Darwin":
+                    if device.startswith("/dev/cu."):
+                        # Try tty.* version first (better for serial I/O)
+                        tty_device = device.replace("/dev/cu.", "/dev/tty.")
+                        import os
+                        if os.path.exists(tty_device):
+                            device = tty_device
+                
+                detected_ports.append((device, port))
+        
+        # Return the first detected port
+        if detected_ports:
+            device, port = detected_ports[0]
+            print(f"   Detected Flipper Zero at {device}")
+            return device
+        
+        # Platform-specific fallback
+        if system == "Darwin":
+            # macOS: try common usbmodem pattern
+            fallback = "/dev/tty.usbmodemflip_1"
+            print(f"   ⚠️  No Flipper Zero detected, using fallback: {fallback}")
+            return fallback
+        else:
+            # Linux: try common ACM port
+            fallback = "/dev/ttyACM0"
+            print(f"   ⚠️  No Flipper Zero detected, using fallback: {fallback}")
+            return fallback
     
     async def connect(self) -> bool:
         """
