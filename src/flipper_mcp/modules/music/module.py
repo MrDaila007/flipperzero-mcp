@@ -5,7 +5,7 @@ from typing import Any, List, Sequence
 from mcp.types import Tool, TextContent
 
 from ..base_module import FlipperModule
-from .formatter import validate_fmf_format, get_fmf_format_specification
+from .formatter import validate_fmf_format, get_fmf_format_specification, normalize_fmf
 from ...core.utils import sanitize_filename
 
 
@@ -43,7 +43,9 @@ class MusicModule(FlipperModule):
             flipper_client: Flipper client instance
         """
         super().__init__(flipper_client)
-        self.music_path = "/ext/music_player"
+        # Music Player stores songs under apps_data on the SD card.
+        # Example known-good path: /ext/apps_data/music_player/Marble_Machine.fmf
+        self.music_path = "/ext/apps_data/music_player"
     
     def get_tools(self) -> List[Tool]:
         """Register Music Player tools with MCP server."""
@@ -135,8 +137,9 @@ class MusicModule(FlipperModule):
                          "Note: The systeminfo module can check SD card status without requiring an SD card."
                 )]
             
-            # Validate FMF format
-            is_valid, error = validate_fmf_format(song_data)
+            # Normalize + validate FMF format (accept legacy input; save in FMF v0)
+            normalized_song = normalize_fmf(song_data)
+            is_valid, error = validate_fmf_format(normalized_song)
             if not is_valid:
                 return [TextContent(
                     type="text",
@@ -168,7 +171,7 @@ class MusicModule(FlipperModule):
             
             # Write file to Flipper
             file_path = f"{self.music_path}/{filename}"
-            success = await self.flipper.storage.write(file_path, song_data)
+            success = await self.flipper.storage.write(file_path, normalized_song)
             
             if not success:
                 return [TextContent(
@@ -179,25 +182,16 @@ class MusicModule(FlipperModule):
             
             result = f"✅ Song saved: {filename}\n\n"
             result += f"📁 Path: {file_path}\n"
-            result += f"📊 Size: {len(song_data)} characters\n\n"
+            result += f"📊 Size: {len(normalized_song)} characters\n\n"
             
-            # Launch Music Player app if requested
+            # NOTE: App launching is not implemented over protobuf RPC in this repo yet.
+            # We keep the flag for API compatibility, but instruct the user to open the app manually.
             if play_immediately:
-                result += "🎵 Launching Music Player...\n"
-                launch_success = await self.flipper.app.launch("MusicPlayer", file_path)
-                
-                if launch_success:
-                    result += "✅ Music Player launched successfully\n"
-                    result += "🎶 The song should start playing on the Flipper Zero piezo speaker\n"
-                else:
-                    result += "⚠️  File saved but Music Player launch failed\n"
-                    result += "   You can manually open the Music Player app on your Flipper Zero\n"
-                    result += f"   and select '{filename}' to play it\n"
+                result += "🎵 Saved. Please open the Music Player app on your Flipper Zero and select the file to play.\n"
             else:
-                result += "⏭️  Music Player not launched (play_immediately=false)\n"
-                result += f"   Use the Music Player app on your Flipper Zero to play '{filename}'\n"
+                result += "⏭️  Saved (play_immediately=false). Open Music Player manually to play.\n"
             
-            result += f"\n📄 Song data:\n```fmf\n{song_data}\n```"
+            result += f"\n📄 Song data (saved, normalized):\n```fmf\n{normalized_song}\n```"
             
             return [TextContent(type="text", text=result)]
             

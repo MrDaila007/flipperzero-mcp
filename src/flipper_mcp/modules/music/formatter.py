@@ -1,7 +1,66 @@
-"""FMF (Flipper Music Format) formatting and validation utilities."""
+"""FMF (Flipper Music Format) formatting and validation utilities.
+
+Important: Flipper Zero's Music Player uses a line-based key/value format (FMF v0),
+not the legacy single-line `BPM=...:DURATION=...:OCTAVE=...:` format that appears in
+some online examples.
+
+We still accept the legacy format as input and normalize it to the v0 format on write.
+"""
 
 import re
 from typing import Tuple, Optional
+
+
+_LEGACY_HEADER_RE = re.compile(r"BPM=(\d+):DURATION=(\d+):OCTAVE=(\d+):")
+
+
+def normalize_fmf(song_data: str) -> str:
+    """
+    Normalize song data into the Flipper Music Player's FMF v0 format.
+
+    Supported inputs:
+    - FMF v0 (line-based): "Filetype: ...\\nVersion: 0\\nBPM: ...\\nDuration: ...\\nOctave: ...\\nNotes: ..."
+    - Legacy (single-line): "BPM=120:DURATION=4:OCTAVE=4: 4C 4D 4E"
+    """
+    if not song_data:
+        return ""
+    s = song_data.strip()
+
+    # If it already looks like FMF v0, keep as-is (but we'll ensure required headers exist).
+    if re.search(r"(?mi)^Notes\\s*:", s) or re.search(r"(?mi)^Filetype\\s*:", s):
+        # Ensure Filetype/Version headers exist (Music Player files include these).
+        has_filetype = bool(re.search(r"(?mi)^Filetype\\s*:", s))
+        has_version = bool(re.search(r"(?mi)^Version\\s*:", s))
+        if has_filetype and has_version:
+            return s + ("\n" if not s.endswith("\n") else "")
+        lines = s.splitlines()
+        out: list[str] = []
+        if not has_filetype:
+            out.append("Filetype: Flipper Music Format")
+        if not has_version:
+            out.append("Version: 0")
+        out.extend(lines)
+        normalized = "\n".join(out).strip() + "\n"
+        return normalized
+
+    # Legacy: BPM=...:DURATION=...:OCTAVE=...: <notes...>
+    m = _LEGACY_HEADER_RE.search(s)
+    if m:
+        bpm, duration, octave = m.group(1), m.group(2), m.group(3)
+        notes_section = s[m.end() :].strip()
+        tokens = [t for t in re.split(r"[\s,]+", notes_section) if t.strip()]
+        notes = ", ".join(tokens)
+        return (
+            "Filetype: Flipper Music Format\n"
+            "Version: 0\n"
+            f"BPM: {bpm}\n"
+            f"Duration: {duration}\n"
+            f"Octave: {octave}\n"
+            f"Notes: {notes}\n"
+        )
+
+    # Unknown: return trimmed input so validator can produce a meaningful error.
+    return s + ("\n" if not s.endswith("\n") else "")
 
 
 def validate_fmf_format(song_data: str) -> Tuple[bool, Optional[str]]:
@@ -14,58 +73,45 @@ def validate_fmf_format(song_data: str) -> Tuple[bool, Optional[str]]:
     Returns:
         (is_valid, error_message) tuple
     """
-    if not song_data or not song_data.strip():
+    normalized = normalize_fmf(song_data)
+    if not normalized or not normalized.strip():
         return False, "Song data is empty"
-    
-    # Check for header (should start with BPM, DURATION, OCTAVE)
-    if not re.search(r'BPM=\d+', song_data):
-        return False, "Missing BPM in header (format: BPM=<number>:)"
-    
-    if not re.search(r'DURATION=\d+', song_data):
-        return False, "Missing DURATION in header (format: DURATION=<number>:)"
-    
-    if not re.search(r'OCTAVE=\d+', song_data):
-        return False, "Missing OCTAVE in header (format: OCTAVE=<number>:)"
-    
-    # Basic note pattern validation
-    # Notes should match pattern: duration + note + optional octave + optional sharp/flat + optional dot
-    # Example: 4C4, 8A#5, 2P, 16Bb3.
-    note_pattern = r'\d+[CDEFGABP]\d*[#b]?\.?'
-    
-    # Extract notes section (after header)
-    # Header format: BPM=...:DURATION=...:OCTAVE=...:
-    # Find the last colon that ends the header
-    header_pattern = r'BPM=\d+:DURATION=\d+:OCTAVE=\d+:'
-    header_match = re.search(header_pattern, song_data)
-    
-    if not header_match:
-        return False, "Invalid header format (expected: BPM=<num>:DURATION=<num>:OCTAVE=<num>:)"
-    
-    # Extract notes section after the header
-    header_end = header_match.end()
-    notes_section = song_data[header_end:].strip()
-    
-    if not notes_section:
-        return False, "No notes found after header"
-    
-    # Check for valid note patterns (allow spaces and commas as separators)
-    # Split by common separators and validate each token
-    tokens = re.split(r'[\s,]+', notes_section)
-    valid_tokens = [t for t in tokens if t.strip()]
-    
-    if not valid_tokens:
-        return False, "No valid notes found"
-    
-    # Basic validation - check that tokens look like notes
-    # This is lenient to allow for various formatting styles
-    for token in valid_tokens:
-        token = token.strip()
-        if not token:
-            continue
-        # Should start with a digit (duration) and contain a note letter
-        if not re.match(r'^\d+[CDEFGABP]', token):
-            return False, f"Invalid note format: '{token}' (expected format: DURATIONNOTE[OCTAVE][#/b][.])"
-    
+
+    # FMF v0 required fields
+    def find_int(key: str) -> Optional[int]:
+        m2 = re.search(rf"(?mi)^{re.escape(key)}\s*:\s*(\d+)\s*$", normalized)
+        return int(m2.group(1)) if m2 else None
+
+    bpm = find_int("BPM")
+    duration = find_int("Duration")
+    octave = find_int("Octave")
+    notes_match = re.search(r"(?mi)^Notes\s*:\s*(.+)\s*$", normalized)
+
+    if bpm is None:
+        return False, "Missing BPM header line (expected: 'BPM: <number>')"
+    if duration is None:
+        return False, "Missing Duration header line (expected: 'Duration: <number>')"
+    if octave is None:
+        return False, "Missing Octave header line (expected: 'Octave: <number>')"
+    if not notes_match or not notes_match.group(1).strip():
+        return False, "Missing Notes line (expected: 'Notes: <comma-separated notes>')"
+
+    # Validate notes (comma-separated). Examples from device:
+    # - E6, P, 4P, F#, B4
+    notes_str = notes_match.group(1).strip()
+    tokens = [t.strip() for t in notes_str.split(",") if t.strip()]
+    if not tokens:
+        return False, "No notes found after 'Notes:'"
+
+    # token: optional duration prefix, note letter or P, optional accidental, optional octave suffix, optional dot
+    token_re = re.compile(r"^(\d+)?([A-GP])([#b])?(\d+)?(\.)?$")
+    for tok in tokens:
+        if not token_re.match(tok):
+            return (
+                False,
+                f"Invalid note token: '{tok}'. Expected forms like 'E6', 'F#', 'B4', '4P', '8A#5'.",
+            )
+
     return True, None
 
 
@@ -76,83 +122,74 @@ def get_fmf_format_specification() -> str:
     Returns:
         Detailed format specification string
     """
-    spec = """FMF (Flipper Music Format) Specification
+    spec = """FMF (Flipper Music Format) Specification (Flipper Music Player)
 ==========================================
 
-FMF is a text-based music format similar to RTTTL, used by Flipper Zero's Music Player app.
+FMF is a simple line-based key/value format used by Flipper Zero's Music Player app.
 
-HEADER FORMAT
--------------
-The header must be at the start of the file and contains three required parameters:
+FILE FORMAT (FMF v0)
+-------------------
+An FMF file is plain text with these header lines:
 
-  BPM=<bpm>:DURATION=<duration>:OCTAVE=<octave>:
+  Filetype: Flipper Music Format
+  Version: 0
+  BPM: <bpm>
+  Duration: <duration>
+  Octave: <octave>
+  Notes: <notes>
 
 Where:
   - BPM: Beats per minute (tempo), typically 60-200
-  - DURATION: Default note duration (1=whole, 2=half, 4=quarter, 8=eighth, 16=sixteenth)
-  - OCTAVE: Default octave (3-7, where 4 is middle C)
-
-Example headers:
-  BPM=120:DURATION=4:OCTAVE=4:
-  BPM=100:DURATION=8:OCTAVE=5:
+  - Duration: Default note duration (1=whole, 2=half, 4=quarter, 8=eighth, 16=sixteenth)
+  - Octave: Default octave (3-7, where 4 is middle C)
+  - Notes: Comma-separated note tokens
 
 NOTE FORMAT
 -----------
-Each note follows this format:
+Notes are comma-separated. Each token is:
 
-  DURATIONNOTE[OCTAVE][SHARP/FLAT][DOT]
+  [DURATION]<NOTE>[ACCIDENTAL][OCTAVE]
 
-Components:
-  - DURATION: Note duration (1, 2, 4, 8, 16)
-  - NOTE: Note letter (C, D, E, F, G, A, B) or P for rest/pause
-  - OCTAVE: Optional octave number (3-7), uses default if omitted
-  - SHARP/FLAT: Optional # for sharp or b for flat
-  - DOT: Optional . for dotted note (1.5x duration)
+Where:
+  - DURATION: optional duration override (1, 2, 4, 8, 16)
+  - NOTE: A, B, C, D, E, F, G or P (pause)
+  - ACCIDENTAL: optional '#' (sharp) or 'b' (flat)
+  - OCTAVE: optional octave override (3-7)
 
-Examples:
-  4C4     - Quarter note C in octave 4
-  8A#5    - Eighth note A sharp in octave 5
-  2P      - Half note rest (pause)
-  16Bb3.  - Dotted sixteenth note B flat in octave 3
-  4C      - Quarter note C in default octave
-  8E.     - Dotted eighth note E in default octave
+Examples from a known-good device file:
+  E6, P, 4P, F#, B4, 8A#5
 
 NOTES
 -----
-- Notes are separated by spaces or commas
-- Rests use 'P' instead of a note letter
+- Notes are separated by commas (spaces after commas are allowed)
+- Rests use 'P'
 - Sharps use '#' and flats use 'b'
-- Dotted notes add 50% to the duration
-- Octave 4 is middle C (C4)
-- Valid octaves are 3-7
+- When a note has no explicit duration, it uses the file's Duration header
+- When a note has no explicit octave, it uses the file's Octave header
 
 COMPLETE EXAMPLE
 ----------------
-BPM=120:DURATION=4:OCTAVE=4: 4C 4C 8C 4D 4E 4C 4E 4D 8C 8C 4G 4F 4E 4D 4C
-
-This plays a simple melody with:
-- Tempo: 120 BPM
-- Default duration: Quarter notes (4)
-- Default octave: 4
-- Notes: C C C D E C E D C C G F E D C
-
-HAPPY BIRTHDAY EXAMPLE
----------------------
-BPM=100:DURATION=4:OCTAVE=4: 4C 4C 8D 4C 4F 4E 4C 4C 8D 4C 4G 4F 4C 4C 8C5 4A 4F 4E 4D 8Bb 8Bb 4A 4F 4G 4F
-
-This is a simplified version of "Happy Birthday" with:
-- Tempo: 100 BPM
-- Default duration: Quarter notes
-- Default octave: 4 (with one note in octave 5: C5)
-- Mix of quarter and eighth notes
+Filetype: Flipper Music Format
+Version: 0
+BPM: 120
+Duration: 4
+Octave: 4
+Notes: 4C, 4C, 8C, 4D, 4E, 4C, 4E, 4D
 
 TIPS
 ----
-- Start with simple melodies using default octave
+- Start with simple melodies using default octave/duration
 - Use rests (P) for pauses between phrases
 - Adjust BPM to match the song's natural tempo
-- Use dotted notes for more musical expression
-- Test with short melodies first"""
+- Test with short melodies first
+
+Legacy compatibility:
+---------------------
+This project will also accept the legacy single-line format:
+
+  BPM=120:DURATION=4:OCTAVE=4: 4C 4D 4E
+
+...and will normalize it to the FMF v0 format when saving to the device."""
     
     return spec
 

@@ -28,10 +28,16 @@ def get_jingle_bells_fmf() -> str:
     Returns:
         FMF formatted string
     """
-    # Jingle Bells melody in FMF format
+    # Jingle Bells melody in FMF v0 format (matches the device's Music Player expectations)
     # Tempo: 120 BPM, Default duration: 4 (quarter notes), Default octave: 4
     # Notes: E E E, E E E, E G C D E, F F F F, F E E E, E D D E D G
-    jingle_bells = """BPM=120:DURATION=4:OCTAVE=4: 4E 4E 4E 4E 4E 4E 4E 4G 4C 4D 4E 4F 4F 4F 4F 4F 4E 4E 4E 4E 4D 4D 4E 4D 4G 4E 4E 4E 4E 4E 4E 4E 4G 4C 4D 4E 4F 4F 4F 4F 4F 4E 4E 4E 4E 4G 4G 4F 4D 4C"""
+    jingle_bells = """Filetype: Flipper Music Format
+Version: 0
+BPM: 120
+Duration: 4
+Octave: 4
+Notes: 4E, 4E, 4E, 4E, 4E, 4E, 4E, 4G, 4C, 4D, 4E, 4F, 4F, 4F, 4F, 4F, 4E, 4E, 4E, 4E, 4D, 4D, 4E, 4D, 4G, 4E, 4E, 4E, 4E, 4E, 4E, 4E, 4G, 4C, 4D, 4E, 4F, 4F, 4F, 4F, 4F, 4E, 4E, 4E, 4E, 4G, 4G, 4F, 4D, 4C
+"""
     
     return jingle_bells
 

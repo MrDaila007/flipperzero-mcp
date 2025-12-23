@@ -4,7 +4,7 @@ The `music` module saves and optionally plays songs on the Flipper Zero using th
 
 ## Storage location
 
-- Songs are stored under `/ext/music_player`
+- Songs are stored under `/ext/apps_data/music_player` on the SD card
 - This module requires a MicroSD card
 
 ## Tools
@@ -26,6 +26,6 @@ Parameters:
 Notes:
 
 - Validation is implemented in `flipper_mcp.modules.music.formatter.validate_fmf_format`.
-- App launching is routed via `FlipperClient.app.launch(...)` (which is currently a stub that returns `True`).
+- App launching is not implemented over protobuf RPC in this repo yet; the tool saves the file and instructs you to open Music Player manually.
 
 

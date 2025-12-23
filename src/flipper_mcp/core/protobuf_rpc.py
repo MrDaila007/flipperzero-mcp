@@ -183,36 +183,13 @@ class ProtobufRPC:
                 payload = probe.SerializeToString()
                 await self.transport.send(self._encode_varint(len(payload)) + payload)
 
-                # Read a single chunk and attempt to parse a delimited message.
-                raw = await self.transport.receive(timeout=timeout)
-                if not raw:
-                    return False
-
-                # Decode varint length from raw[0:].
-                ln = 0
-                shift = 0
-                i = 0
-                for _ in range(5):
-                    if i >= len(raw):
-                        return False
-                    b = raw[i]
-                    i += 1
-                    ln |= (b & 0x7F) << shift
-                    if not (b & 0x80):
-                        break
-                    shift += 7
-                else:
-                    return False
-
-                if ln <= 0 or ln > 1_000_000:
-                    return False
-                if len(raw) < i + ln:
-                    # Not enough for full message; don't block here.
-                    return False
-
-                msg = flipper_pb2.Main()
-                msg.ParseFromString(raw[i : i + ln])
-                return msg.HasField("system_ping_response") and msg.system_ping_response.data == b"mcp"
+                # Robustly read one nanopb-delimited message.
+                msg = await self._receive_main_message(timeout=timeout)
+                return (
+                    bool(msg)
+                    and msg.HasField("system_ping_response")
+                    and msg.system_ping_response.data == b"mcp"
+                )
             except Exception:
                 # If we probed while in CLI mode, the device may have emitted text output;
                 # drain it so it doesn't interfere with subsequent session negotiation.
@@ -231,22 +208,40 @@ class ProtobufRPC:
                 self._rpc_session_started = True
                 return
 
-        # Switch to RPC mode via CLI command (CR-only) and drain echo.
-        try:
-            # Cancel any partially typed CLI input that could prevent the command
-            # from being recognized (the CLI may remain open across host reconnects).
-            await self.transport.send(b"\x03\r")
-            await self.transport.send(b"start_rpc_session\r")
-        except Exception:
-            pass
+        # Switch to RPC mode via CLI command (CR-only) and verify by probing.
+        # Important: do NOT assume the mode switch succeeded; if it didn't, subsequent
+        # protobuf reads will interpret CLI output as varint framing and fail hard.
+        async def start_session_attempt() -> bool:
+            try:
+                # Cancel any partially typed CLI input that could prevent the command
+                # from being recognized (the CLI may remain open across host reconnects).
+                await self.transport.send(b"\x03\r")
+                await self.transport.send(b"start_rpc_session\r")
+            except Exception:
+                pass
 
-        await drain_host_rx(max_seconds=0.4)
-        try:
-            self.transport.clear_receive_buffer()
-        except Exception:
-            pass
+            await drain_host_rx(max_seconds=0.4)
+            try:
+                self.transport.clear_receive_buffer()
+            except Exception:
+                pass
+            # Give the device a moment to switch modes before probing.
+            try:
+                import asyncio
+                await asyncio.sleep(0.2)
+            except Exception:
+                pass
 
-        self._rpc_session_started = True
+            return await probe_rpc(timeout=1.2)
+
+        # One or two attempts is usually enough; keep it bounded to avoid long hangs.
+        ok = await start_session_attempt()
+        if not ok:
+            ok = await start_session_attempt()
+        if not ok:
+            ok = await start_session_attempt()
+
+        self._rpc_session_started = bool(ok)
     
     async def _send_rpc_message(
         self, 
@@ -453,6 +448,30 @@ class ProtobufRPC:
         except Exception:
             return names
 
+    async def storage_list_detailed(
+        self, path: str, include_md5: bool = False, filter_max_size: int = 0
+    ) -> list[dict[str, Any]]:
+        """
+        List entries in a directory via protobuf storage_list_request (detailed).
+
+        Returns a list of dicts with:
+        - name: entry name
+        - type: "FILE" | "DIR"
+        - size: uint32 size (0 for dirs on most firmwares)
+        - md5sum: optional md5 (only when include_md5=True and device provides it)
+        """
+        entries: list[dict[str, Any]] = []
+        import asyncio
+        try:
+            return await asyncio.wait_for(
+                self._storage_list_detailed_internal(
+                    path, include_md5=include_md5, filter_max_size=filter_max_size
+                ),
+                timeout=3.0,
+            )
+        except Exception:
+            return entries
+
     async def _storage_list_internal(
         self, path: str, include_md5: bool = False, filter_max_size: int = 0
     ) -> list[str]:
@@ -496,6 +515,54 @@ class ProtobufRPC:
         except Exception:
             pass
         return names
+
+    async def _storage_list_detailed_internal(
+        self, path: str, include_md5: bool = False, filter_max_size: int = 0
+    ) -> list[dict[str, Any]]:
+        entries: list[dict[str, Any]] = []
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+
+            req = storage_pb2.ListRequest()
+            req.path = path
+            req.include_md5 = include_md5
+            if filter_max_size:
+                req.filter_max_size = int(filter_max_size)
+            main_request.storage_list_request.CopyFrom(req)
+
+            main_response = await self._send_rpc_message(main_request)
+            if not main_response or main_response.command_status != flipper_pb2.CommandStatus.OK:
+                return entries
+
+            def collect(resp: Any) -> None:
+                if resp.HasField("storage_list_response"):
+                    for f in resp.storage_list_response.file:
+                        if not f.name:
+                            continue
+                        ftype = "DIR" if f.type == storage_pb2.File.DIR else "FILE"
+                        item: dict[str, Any] = {"name": f.name, "type": ftype, "size": int(f.size)}
+                        if include_md5 and getattr(f, "md5sum", ""):
+                            item["md5sum"] = f.md5sum
+                        entries.append(item)
+
+            collect(main_response)
+
+            max_iterations = 100
+            iteration = 0
+            while main_response.has_next and iteration < max_iterations:
+                iteration += 1
+                next_response = await self._receive_main_message(timeout=2.5)
+                if not next_response:
+                    break
+                main_response = next_response
+                if main_response.command_status != flipper_pb2.CommandStatus.OK:
+                    break
+                collect(main_response)
+        except Exception:
+            pass
+        return entries
 
     async def storage_read(self, path: str) -> bytes:
         """

@@ -286,20 +286,27 @@ class FlipperClient:
             return False
 
         # Prefer protobuf storage info when available; this is more reliable than write/read probes.
+        # On some firmwares / timing windows, the first RPC call after connecting can fail while the
+        # CLI->RPC session is still being negotiated. Retry a few times before concluding SD is missing.
         if self.rpc:
             try:
-                storage_info = await self.rpc.storage_info("/ext")
-                if storage_info and storage_info.get("total_space", 0) > 0:
-                    self._sd_card_available = True
-                    return True
+                import asyncio
+
+                for _ in range(3):
+                    storage_info = await self.rpc.storage_info("/ext")
+                    if storage_info and storage_info.get("total_space", 0) > 0:
+                        self._sd_card_available = True
+                        return True
+                    await asyncio.sleep(0.2)
             except Exception:
                 pass
 
-        # Fallback: list /ext (can be empty even when SD is present, so this is weaker).
+        # Fallback: list /ext (weaker; can be empty even when SD is present).
         try:
             files = await self.storage.list("/ext")
-            self._sd_card_available = files is not None
-            return bool(files)
+            # If we can list at all, assume the mount is accessible (even if empty).
+            self._sd_card_available = True
+            return True if files is not None else False
         except Exception:
             self._sd_card_available = False
             return False
