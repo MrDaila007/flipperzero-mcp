@@ -3,12 +3,25 @@
 This module implements a simplified RPC protocol for communicating with
 Flipper Zero devices. The Flipper Zero uses a protobuf-based RPC protocol,
 but for initial testing, we implement a basic CLI-based approach.
+
+The implementation tries to use proper protobuf RPC when possible, falling
+back to simplified methods if needed.
 """
 
 import asyncio
 import struct
+import json
+import subprocess
+import shutil
 from typing import Optional, Dict, Any, List
 from .transport.base import FlipperTransport
+
+# Try to import protobuf RPC implementation
+try:
+    from .protobuf_rpc import ProtobufRPC
+    PROTOBUF_RPC_AVAILABLE = True
+except ImportError:
+    PROTOBUF_RPC_AVAILABLE = False
 
 
 class FlipperRPC:
@@ -29,24 +42,34 @@ class FlipperRPC:
         """
         self.transport = transport
         self.command_id = 0
+        
+        # Try to use protobuf RPC if available
+        # Note: We initialize it lazily to avoid blocking if protobuf isn't working
+        self.protobuf_rpc: Optional[ProtobufRPC] = None
+        self._protobuf_rpc_initialized = False
+        if PROTOBUF_RPC_AVAILABLE:
+            # Don't initialize yet - do it lazily on first use
+            pass
     
     async def send_command(self, command: str, data: bytes = b"") -> bytes:
         """
         Send a command to Flipper Zero.
         
         Note: This is a simplified implementation. The actual Flipper Zero
-        uses a protobuf-based RPC protocol. This method may not work with
-        all firmware versions and is primarily for basic connectivity testing.
+        uses a protobuf-based RPC protocol. This method tries to communicate
+        using a basic framing protocol that may work with some firmware versions.
         
         Args:
-            command: Command string (e.g., "storage_list")
+            command: Command string (e.g., "system.get_device_info", "property.get")
             data: Optional command data
             
         Returns:
             Response data (empty if no response or error)
         """
         try:
-            # Simple command format: <command_len><command><data_len><data>
+            # Try multiple command formats to increase compatibility
+            
+            # Format 1: Simple command format: <command_len><command><data_len><data>
             cmd_bytes = command.encode('utf-8')
             cmd_len = len(cmd_bytes)
             data_len = len(data)
@@ -56,9 +79,9 @@ class FlipperRPC:
             
             await self.transport.send(message)
             
-            # Wait for response
-            # Response format: [4 bytes: response_len][response_data]
-            response_len_bytes = await self.transport.receive(timeout=2.0)
+            # Wait for response with longer timeout for device info queries
+            timeout = 5.0 if "device_info" in command or "property" in command else 2.0
+            response_len_bytes = await self.transport.receive(timeout=timeout)
             if len(response_len_bytes) < 4:
                 return b""
             
@@ -67,10 +90,19 @@ class FlipperRPC:
                 return b""
             
             # Read the actual response
-            response = await self.transport.receive(timeout=2.0)
-            return response
+            response = await self.transport.receive(timeout=timeout)
+            
+            # If response is shorter than expected, try to read more
+            if len(response) < (response_len - 4):
+                remaining = response_len - 4 - len(response)
+                if remaining > 0:
+                    additional = await self.transport.receive(timeout=timeout)
+                    response = response + additional
+            
+            return response[:(response_len - 4)] if len(response) >= (response_len - 4) else response
+            
         except Exception:
-            # If structured RPC fails, return empty (will fall back to CLI methods)
+            # If structured RPC fails, return empty (will fall back to other methods)
             return b""
     
     async def ping(self) -> bool:
@@ -88,42 +120,291 @@ class FlipperRPC:
     
     async def get_device_info(self) -> Dict[str, Any]:
         """
-        Get device information.
+        Get device information using Flipper Zero RPC methods.
+        
+        Tries multiple RPC methods to get device information:
+        1. Protobuf RPC (if available) - proper protocol implementation
+        2. system.get_device_info (official RPC method)
+        3. property.get for individual properties
+        4. Fallback to basic info
+        
+        Returns:
+            Device info dictionary with name, hardware, firmware, etc.
+        """
+        info = {
+            "name": "Flipper Zero",
+            "hardware": "Flipper Zero",
+            "firmware": "Unknown",
+            "firmware_version": None,
+            "hardware_model": None,
+            "hardware_version": None,
+            "serial_number": None
+        }
+        
+        # Try protobuf RPC first (proper implementation)
+        # Initialize lazily on first use
+        if PROTOBUF_RPC_AVAILABLE and not self._protobuf_rpc_initialized:
+            try:
+                self.protobuf_rpc = ProtobufRPC(self.transport)
+                self._protobuf_rpc_initialized = True
+            except Exception:
+                self._protobuf_rpc_initialized = True  # Mark as tried to avoid retrying
+        
+        if self.protobuf_rpc:
+            try:
+                # Use asyncio.wait_for to ensure we don't hang forever
+                import asyncio
+                protobuf_info = await asyncio.wait_for(
+                    self.protobuf_rpc.get_device_info(),
+                    timeout=3.0
+                )
+                if protobuf_info:
+                    # Map protobuf response to our info structure
+                    for key, value in protobuf_info.items():
+                        key_lower = key.lower()
+                        if 'firmware' in key_lower or 'version' in key_lower:
+                            info["firmware"] = value
+                            info["firmware_version"] = value
+                        elif 'hardware' in key_lower or 'model' in key_lower:
+                            info["hardware"] = value
+                            info["hardware_model"] = value
+                        elif 'serial' in key_lower:
+                            info["serial_number"] = value
+                        elif 'name' in key_lower or 'device' in key_lower:
+                            info["name"] = value
+                    
+                    # If we got useful info, return it
+                    if info.get("firmware") != "Unknown" or info.get("firmware_version"):
+                        return info
+            except (asyncio.TimeoutError, Exception):
+                # Protobuf RPC failed or timed out - continue to fallback methods
+                pass
+        
+        # Try system.get_device_info (official RPC method)
+        try:
+            response = await self.send_command("system.get_device_info")
+            if response:
+                parsed = self._parse_device_info_response(response)
+                if parsed:
+                    info.update(parsed)
+                    if info.get("firmware") != "Unknown" or info.get("firmware_version"):
+                        return info
+        except Exception:
+            pass
+        
+        # Try property.get for individual properties
+        try:
+            # Get firmware version
+            fw_version = await self._get_property("firmware_version")
+            if fw_version:
+                info["firmware"] = fw_version
+                info["firmware_version"] = fw_version
+            
+            # Get hardware model
+            hw_model = await self._get_property("hardware_model")
+            if hw_model:
+                info["hardware"] = hw_model
+                info["hardware_model"] = hw_model
+            
+            # Get hardware version
+            hw_version = await self._get_property("hardware_version")
+            if hw_version:
+                info["hardware_version"] = hw_version
+            
+            # Get serial number
+            serial = await self._get_property("serial_number")
+            if serial:
+                info["serial_number"] = serial
+        except Exception:
+            pass
+        
+        # If we got at least firmware version, return what we have
+        if info.get("firmware") != "Unknown" or info.get("firmware_version"):
+            return info
+        
+        # Final fallback
+        return await self._get_info_via_cli()
+    
+    async def _get_property(self, key: str) -> Optional[str]:
+        """
+        Get a property value using property.get RPC call.
+        
+        Args:
+            key: Property key
+            
+        Returns:
+            Property value or None
+        """
+        try:
+            import json
+            payload = json.dumps({"key": key}).encode('utf-8')
+            response = await self.send_command(f"property.get", payload)
+            if response:
+                try:
+                    result = json.loads(response.decode('utf-8', errors='ignore'))
+                    return result.get("value")
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    text = response.decode('utf-8', errors='ignore').strip()
+                    if text and text != "":
+                        return text
+        except Exception:
+            pass
+        return None
+    
+    def _parse_device_info_response(self, response: bytes) -> Optional[Dict[str, Any]]:
+        """
+        Parse device info from RPC response.
+        
+        Args:
+            response: Response bytes from RPC call
+            
+        Returns:
+            Parsed device info dictionary or None
+        """
+        try:
+            # Try JSON first
+            import json
+            text = response.decode('utf-8', errors='ignore')
+            try:
+                data = json.loads(text)
+                if isinstance(data, dict):
+                    return data
+            except json.JSONDecodeError:
+                pass
+            
+            # Try to parse as text/structured format
+            info = {}
+            lines = text.split('\n')
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Look for key:value pairs
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    key = key.strip().lower()
+                    value = value.strip()
+                    
+                    if 'firmware' in key or 'version' in key:
+                        info["firmware"] = value
+                        info["firmware_version"] = value
+                    elif 'hardware' in key or 'model' in key:
+                        info["hardware"] = value
+                        info["hardware_model"] = value
+                    elif 'serial' in key:
+                        info["serial_number"] = value
+                    elif 'name' in key or 'device' in key:
+                        info["name"] = value
+            
+            return info if info else None
+            
+        except Exception:
+            return None
+    
+    async def _get_info_via_cli(self) -> Dict[str, Any]:
+        """
+        Get device info via fallback methods.
+        
+        Tries:
+        1. Flipper Zero CLI tools (if available)
+        2. Basic info fallback
         
         Returns:
             Device info dictionary
         """
-        try:
-            response = await self.send_command("device_info")
-            if response:
-                # Parse response (simplified - would need proper parsing)
-                info_str = response.decode('utf-8', errors='ignore')
-                return {
-                    "name": "Flipper Zero",
-                    "firmware": info_str.split('\n')[0] if info_str else "Unknown",
-                    "hardware": "Flipper Zero"
-                }
-        except Exception as e:
-            pass
+        # Try to use Flipper CLI tools if available
+        info = await self._try_flipper_cli()
+        if info:
+            return info
         
-        # Fallback: try to read from CLI
-        return await self._get_info_via_cli()
-    
-    async def _get_info_via_cli(self) -> Dict[str, Any]:
-        """
-        Get device info via CLI commands (fallback method).
-        
-        Note: Flipper Zero doesn't actually support simple text commands.
-        This is a placeholder that returns basic info. In a full implementation,
-        we would use the proper protobuf RPC protocol.
-        """
-        # For now, just return basic info since we can't easily query
-        # without the full RPC protocol implementation
+        # Final fallback
         return {
             "name": "Flipper Zero",
-            "firmware": "Connected (RPC protocol not fully implemented)",
-            "hardware": "Flipper Zero"
+            "hardware": "Flipper Zero",
+            "firmware": "Unknown (RPC protocol not fully implemented)",
         }
+    
+    async def _try_flipper_cli(self) -> Optional[Dict[str, Any]]:
+        """
+        Try to get device info using Flipper Zero CLI tools.
+        
+        Checks for common CLI tools like 'flipper' or 'qflipper-cli'.
+        
+        Returns:
+            Device info dict if successful, None otherwise
+        """
+        # Check for common Flipper CLI tools
+        cli_tools = ['flipper', 'qflipper-cli', 'flipperzero-cli']
+        cli_tool = None
+        
+        for tool in cli_tools:
+            if shutil.which(tool):
+                cli_tool = tool
+                break
+        
+        if not cli_tool:
+            return None
+        
+        try:
+            # Try to get device info via CLI
+            # Common commands: 'flipper info' or 'qflipper-cli info'
+            process = await asyncio.create_subprocess_exec(
+                cli_tool, 'info',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=5.0)
+            
+            if process.returncode == 0 and stdout:
+                # Parse CLI output
+                output = stdout.decode('utf-8', errors='ignore')
+                return self._parse_cli_output(output)
+        except (asyncio.TimeoutError, FileNotFoundError, subprocess.SubprocessError):
+            pass
+        
+        return None
+    
+    def _parse_cli_output(self, output: str) -> Dict[str, Any]:
+        """
+        Parse output from Flipper CLI tools.
+        
+        Args:
+            output: CLI tool output text
+            
+        Returns:
+            Parsed device info dictionary
+        """
+        info = {
+            "name": "Flipper Zero",
+            "hardware": "Flipper Zero",
+            "firmware": "Unknown"
+        }
+        
+        lines = output.split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Look for common patterns
+            if ':' in line:
+                key, value = line.split(':', 1)
+                key = key.strip().lower()
+                value = value.strip()
+                
+                if any(term in key for term in ['firmware', 'version', 'fw']):
+                    info["firmware"] = value
+                    info["firmware_version"] = value
+                elif any(term in key for term in ['hardware', 'model', 'hw']):
+                    info["hardware"] = value
+                    info["hardware_model"] = value
+                elif 'serial' in key:
+                    info["serial_number"] = value
+                elif any(term in key for term in ['name', 'device']):
+                    info["name"] = value
+        
+        return info
     
     async def storage_list(self, path: str) -> List[str]:
         """

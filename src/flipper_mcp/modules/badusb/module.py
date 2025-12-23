@@ -186,6 +186,22 @@ class BadUSBModule(FlipperModule):
     async def _list_scripts(self) -> Sequence[TextContent]:
         """List all BadUSB scripts."""
         try:
+            # Check SD card availability
+            sd_card_available = await self.flipper.check_sd_card_available()
+            if not sd_card_available:
+                return [TextContent(
+                    type="text",
+                    text="❌ MicroSD card is not detected or not accessible\n\n"
+                         "This operation requires a MicroSD card to be installed in your Flipper Zero.\n"
+                         "BadUSB scripts are stored on the SD card.\n\n"
+                         "Please:\n"
+                         "1. Insert a MicroSD card into your Flipper Zero\n"
+                         "2. Ensure the card is properly formatted\n"
+                         "3. Use 'systeminfo_get' to verify SD card status\n"
+                         "4. Try again\n\n"
+                         "Note: The systeminfo module can check SD card status without requiring an SD card."
+                )]
+            
             files = await self.flipper.storage.list(self.badusb_path)
             
             if not files:
@@ -210,6 +226,22 @@ class BadUSBModule(FlipperModule):
     async def _read_script(self, filename: str) -> Sequence[TextContent]:
         """Read script contents."""
         try:
+            # Check SD card availability
+            sd_card_available = await self.flipper.check_sd_card_available()
+            if not sd_card_available:
+                return [TextContent(
+                    type="text",
+                    text="❌ MicroSD card is not detected or not accessible\n\n"
+                         "This operation requires a MicroSD card to be installed in your Flipper Zero.\n"
+                         "BadUSB scripts are stored on the SD card.\n\n"
+                         "Please:\n"
+                         "1. Insert a MicroSD card into your Flipper Zero\n"
+                         "2. Ensure the card is properly formatted\n"
+                         "3. Use 'systeminfo_get' to verify SD card status\n"
+                         "4. Try again\n\n"
+                         "Note: The systeminfo module can check SD card status without requiring an SD card."
+                )]
+            
             path = f"{self.badusb_path}/{filename}"
             content = await self.flipper.storage.read(path)
             
@@ -229,6 +261,22 @@ class BadUSBModule(FlipperModule):
     ) -> Sequence[TextContent]:
         """Generate and save BadUSB script."""
         try:
+            # Check SD card availability
+            sd_card_available = await self.flipper.check_sd_card_available()
+            if not sd_card_available:
+                return [TextContent(
+                    type="text",
+                    text="❌ MicroSD card is not detected or not accessible\n\n"
+                         "This operation requires a MicroSD card to be installed in your Flipper Zero.\n"
+                         "BadUSB scripts must be saved to the SD card.\n\n"
+                         "Please:\n"
+                         "1. Insert a MicroSD card into your Flipper Zero\n"
+                         "2. Ensure the card is properly formatted\n"
+                         "3. Use 'systeminfo_get' to verify SD card status\n"
+                         "4. Try again\n\n"
+                         "Note: The systeminfo module can check SD card status without requiring an SD card."
+                )]
+            
             # Generate script
             script = self.generator.generate(description, target_os)
             
@@ -273,6 +321,22 @@ class BadUSBModule(FlipperModule):
             )]
         
         try:
+            # Check SD card availability
+            sd_card_available = await self.flipper.check_sd_card_available()
+            if not sd_card_available:
+                return [TextContent(
+                    type="text",
+                    text="❌ MicroSD card is not detected or not accessible\n\n"
+                         "This operation requires a MicroSD card to be installed in your Flipper Zero.\n"
+                         "BadUSB scripts are stored on the SD card and must be accessible to execute.\n\n"
+                         "Please:\n"
+                         "1. Insert a MicroSD card into your Flipper Zero\n"
+                         "2. Ensure the card is properly formatted\n"
+                         "3. Use 'systeminfo_get' to verify SD card status\n"
+                         "4. Try again\n\n"
+                         "Note: The systeminfo module can check SD card status without requiring an SD card."
+                )]
+            
             path = f"{self.badusb_path}/{filename}"
             
             # Read script first (for display)
@@ -302,6 +366,22 @@ class BadUSBModule(FlipperModule):
     ) -> Sequence[TextContent]:
         """Complete workflow: generate, validate, save, and optionally execute."""
         try:
+            # Check SD card availability first
+            sd_card_available = await self.flipper.check_sd_card_available()
+            if not sd_card_available:
+                return [TextContent(
+                    type="text",
+                    text="❌ MicroSD card is not detected or not accessible\n\n"
+                         "This operation requires a MicroSD card to be installed in your Flipper Zero.\n"
+                         "BadUSB scripts must be saved to the SD card.\n\n"
+                         "Please:\n"
+                         "1. Insert a MicroSD card into your Flipper Zero\n"
+                         "2. Ensure the card is properly formatted\n"
+                         "3. Use 'systeminfo_get' to verify SD card status\n"
+                         "4. Try again\n\n"
+                         "Note: The systeminfo module can check SD card status without requiring an SD card."
+                )]
+            
             result = "🤖 BadUSB Workflow\n"
             result += "=" * 50 + "\n\n"
             
@@ -354,9 +434,15 @@ class BadUSBModule(FlipperModule):
                 text=f"❌ Error in workflow: {str(e)}"
             )]
     
+    def requires_sd_card(self) -> bool:
+        """BadUSB module requires SD card to store and execute scripts."""
+        return True
+    
     def validate_environment(self) -> tuple[bool, str]:
         """Check if BadUSB is available."""
         # In production, could check firmware version, BadUSB app presence, etc.
+        # Note: We don't check SD card here because modules should still load
+        # even if SD card is missing - they'll check at operation time
         return True, ""
     
     def get_dependencies(self) -> List[str]:

@@ -76,15 +76,37 @@ class SystemInfoModule(FlipperModule):
                 result += "📟 Device Information:\n"
                 result += f"   Name: {device_info.get('name', 'Unknown')}\n"
                 result += f"   Hardware: {device_info.get('hardware', 'Unknown')}\n"
-                result += f"   Firmware: {device_info.get('firmware', 'Unknown')}\n\n"
+                
+                # Show hardware model/version if available
+                if device_info.get('hardware_model'):
+                    result += f"   Hardware Model: {device_info.get('hardware_model')}\n"
+                if device_info.get('hardware_version'):
+                    result += f"   Hardware Version: {device_info.get('hardware_version')}\n"
+                
+                # Firmware information
+                firmware = device_info.get('firmware', 'Unknown')
+                result += f"   Firmware: {firmware}\n"
+                
+                # Show detailed firmware version if different from main firmware field
+                if device_info.get('firmware_version') and device_info.get('firmware_version') != firmware:
+                    result += f"   Firmware Version: {device_info.get('firmware_version')}\n"
+                
+                # Serial number if available
+                if device_info.get('serial_number'):
+                    result += f"   Serial Number: {device_info.get('serial_number')}\n"
+                
+                result += "\n"
             except Exception as e:
                 result += f"⚠️  Could not retrieve device info: {str(e)}\n\n"
             
-            # Firmware version (try separate call)
+            # Firmware version (try separate call as backup)
             try:
                 firmware_version = await self.flipper.get_firmware_version()
-                if firmware_version and firmware_version != "Unknown":
-                    result += f"🔧 Firmware Version: {firmware_version}\n\n"
+                if firmware_version and firmware_version != "Unknown" and "not fully implemented" not in firmware_version:
+                    # Only show if it's different from what we already showed
+                    device_info = await self.flipper.get_device_info()
+                    if device_info.get('firmware') != firmware_version:
+                        result += f"🔧 Firmware Version: {firmware_version}\n\n"
             except Exception:
                 pass  # Already included in device_info
             
@@ -118,6 +140,19 @@ class SystemInfoModule(FlipperModule):
                         result += f"🔢 Serial Number: {rpc_info['serial_number']}\n\n"
             except Exception:
                 pass  # Serial number may not be available
+            
+            # SD card status
+            try:
+                sd_card_available = await self.flipper.check_sd_card_available()
+                result += "💾 Storage Information:\n"
+                if sd_card_available:
+                    result += "   MicroSD Card: ✅ Detected and accessible\n"
+                else:
+                    result += "   MicroSD Card: ❌ Not detected or not accessible\n"
+                    result += "   Note: Some modules require an SD card to function\n"
+                result += "\n"
+            except Exception as e:
+                result += f"⚠️  Could not check SD card status: {str(e)}\n\n"
             
             # Additional system info if available
             try:

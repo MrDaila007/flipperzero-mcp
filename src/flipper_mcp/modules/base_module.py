@@ -130,3 +130,16 @@ class FlipperModule(ABC):
             (is_valid, error_message)
         """
         return True, ""
+    
+    def requires_sd_card(self) -> bool:
+        """
+        Return whether this module requires SD card to function.
+        
+        Modules that need to write files to /ext/* paths should
+        override this to return True. The module system will check
+        SD card availability before executing operations that require it.
+        
+        Returns:
+            True if module requires SD card, False otherwise
+        """
+        return False  # Default: no SD card required
