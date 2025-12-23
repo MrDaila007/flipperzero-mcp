@@ -87,7 +87,9 @@ transport:
 
 ### With AI Assistants (Claude, etc.)
 
-Once the server is running, connect it to your AI assistant. Example interactions:
+**📘 First-time setup?** See the [Claude Setup Guide](docs/claude_setup.md) for detailed configuration instructions.
+
+Once the server is configured and running, connect it to your AI assistant. Example interactions:
 
 **Natural Language → BadUSB Scripts:**
 ```
@@ -289,10 +291,10 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 
 ## 📖 Documentation
 
+- [**Claude Setup Guide**](docs/claude_setup.md) - Configure MCP server for Claude Desktop
 - [Architecture Overview](docs/architecture.md)
 - [Module Development Guide](docs/module_development.md)
 - [API Reference](docs/api_reference.md)
-- [Transport Guide](docs/transport_guide.md)
 
 ## 🔒 Security
 
