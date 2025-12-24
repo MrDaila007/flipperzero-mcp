@@ -28,7 +28,7 @@ class MusicModule(FlipperModule):
     @property
     def version(self) -> str:
         """Module version."""
-        return "1.0.0"
+        return "1.0.1"
     
     @property
     def description(self) -> str:
