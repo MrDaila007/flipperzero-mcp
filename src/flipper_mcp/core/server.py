@@ -45,6 +45,43 @@ class FlipperMCPServer:
     
     def _register_handlers(self) -> None:
         """Register MCP protocol handlers."""
+        always_allowed_tools = {
+            # Allow assistants to determine reality and recover, even when disconnected.
+            "flipper_connection_health",
+            "flipper_connection_reconnect",
+        }
+
+        def _looks_like_disconnect(text: str) -> bool:
+            t = (text or "").lower()
+            needles = [
+                "not connected",
+                "usb not connected",
+                "wifi not connected",
+                "connection reset",
+                "broken pipe",
+                "device disconnected",
+                "serialexception",
+            ]
+            return any(n in t for n in needles)
+
+        async def _attempt_reconnect_once() -> bool:
+            """
+            Best-effort reconnect for mid-session drops.
+
+            Returns True if reconnect succeeded, False otherwise.
+            """
+            if not self.flipper:
+                return False
+            if bool(getattr(self.flipper, "stub_mode", False)):
+                return False
+            try:
+                try:
+                    await self.flipper.disconnect()
+                except Exception:
+                    pass
+                return bool(await self.flipper.connect())
+            except Exception:
+                return False
         
         @self.app.list_tools()
         async def list_tools() -> list[Tool]:
@@ -56,19 +93,76 @@ class FlipperMCPServer:
         @self.app.call_tool()
         async def call_tool(name: str, arguments: Any) -> Sequence[TextContent]:
             """Route tool calls to appropriate module."""
-            if not self.flipper or not self.flipper.connected:
+            if name not in always_allowed_tools:
+                if not self.flipper or not self.flipper.connected:
+                    return [TextContent(
+                        type="text",
+                        text="❌ Flipper Zero not connected. Please ensure the device is connected."
+                    )]
+
+            # Connection tools are allowed even if disconnected; still require flipper object.
+            if not self.flipper:
                 return [TextContent(
                     type="text",
-                    text="❌ Flipper Zero not connected. Please ensure the device is connected."
+                    text="❌ Flipper client is not initialized."
                 )]
+
+            # If transport is already known-bad, try to heal once before routing the tool.
+            if name not in always_allowed_tools:
+                try:
+                    transport_ok = bool(await self.flipper.transport.is_connected())
+                except Exception:
+                    transport_ok = False
+                if not transport_ok:
+                    if await _attempt_reconnect_once():
+                        # Continue to route tool call after reconnect.
+                        pass
+                    else:
+                        return [TextContent(
+                            type="text",
+                            text=(
+                                "❌ Flipper Zero disconnected. Auto-reconnect failed.\n"
+                                "Call `flipper_connection_health` to verify status, then `flipper_connection_reconnect` to retry."
+                            ),
+                        )]
             
             try:
-                return await self.registry.route_tool_call(name, arguments)
+                result = await self.registry.route_tool_call(name, arguments)
             except Exception as e:
-                return [TextContent(
-                    type="text",
-                    text=f"❌ Error executing tool: {str(e)}"
-                )]
+                # If routing itself threw, try one reconnect for non-connection tools.
+                if name not in always_allowed_tools and _looks_like_disconnect(str(e)):
+                    if await _attempt_reconnect_once():
+                        try:
+                            result = await self.registry.route_tool_call(name, arguments)
+                        except Exception as e2:
+                            return [TextContent(type="text", text=f"❌ Error executing tool: {str(e2)}")]
+                    else:
+                        return [TextContent(
+                            type="text",
+                            text=(
+                                "❌ Flipper Zero disconnected. Auto-reconnect failed.\n"
+                                "Call `flipper_connection_health` to verify status, then `flipper_connection_reconnect` to retry."
+                            ),
+                        )]
+                else:
+                    return [TextContent(type="text", text=f"❌ Error executing tool: {str(e)}")]
+
+            # If module returned a disconnect-like error, attempt reconnect once and retry.
+            if name not in always_allowed_tools and result:
+                joined = "\n".join([getattr(x, "text", "") for x in result])
+                if _looks_like_disconnect(joined):
+                    if await _attempt_reconnect_once():
+                        retry = await self.registry.route_tool_call(name, arguments)
+                        return retry
+                    return [TextContent(
+                        type="text",
+                        text=(
+                            "❌ Flipper Zero disconnected. Auto-reconnect failed.\n"
+                            "Call `flipper_connection_health` to verify status, then `flipper_connection_reconnect` to retry."
+                        ),
+                    )]
+
+            return result
     
     async def initialize(self) -> None:
         """
@@ -100,16 +194,38 @@ class FlipperMCPServer:
         print(f"   Connecting to Flipper Zero...")
         if not await self.flipper.connect():
             print("❌ Failed to connect to Flipper Zero")
-            print("\n⚠️  NOTE: This is a stub implementation.")
-            print("   In production, ensure Flipper Zero is connected via USB/WiFi/BLE")
-            print("   Running in STUB MODE for demonstration purposes.")
-            # Enable stub mode instead of forcing connection
-            self.flipper.connected = True  # Stub mode
-            self.stub_mode = True
+            allow_stub = os.environ.get("FLIPPER_MCP_ALLOW_STUB_MODE", "").lower() in (
+                "1",
+                "true",
+                "yes",
+                "on",
+            )
+            if allow_stub:
+                print("\n⚠️  NOTE: Running in DEV STUB MODE (explicitly enabled).")
+                print("   In production, ensure Flipper Zero is connected via USB/WiFi/BLE")
+                print("   Set FLIPPER_MCP_ALLOW_STUB_MODE=0 to disable this behavior.")
+                # Dev-only: allow tool routing even without hardware.
+                self.flipper.connected = True
+                self.stub_mode = True
+            else:
+                print("\n⚠️  Not connected (stub mode disabled).")
+                print("   Only connection tools will be usable until a Flipper is connected.")
+                self.flipper.connected = False
+                self.stub_mode = False
         else:
             self.stub_mode = False
+
+        # Publish stub mode to the client for health reporting.
+        try:
+            self.flipper.stub_mode = bool(self.stub_mode)
+        except Exception:
+            pass
         
-        print("✓ Connected to Flipper Zero" + (" (STUB MODE)" if self.stub_mode else ""))
+        print(
+            "✓ Connected to Flipper Zero" + (" (STUB MODE)" if self.stub_mode else "")
+            if self.flipper.connected
+            else "⚠️  Flipper Zero not connected"
+        )
         
         # Get device info
         try:

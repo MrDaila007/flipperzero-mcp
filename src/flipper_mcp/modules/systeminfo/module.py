@@ -64,11 +64,25 @@ class SystemInfoModule(FlipperModule):
             result += "=" * 50 + "\n\n"
             
             # Connection status
-            is_connected = self.flipper.connected
-            result += f"🔌 Connection Status: {'✅ Connected' if is_connected else '❌ Not Connected'}\n\n"
+            health = await self.flipper.get_connection_health(probe_rpc=True)
+            is_connected = bool(health.get("connected"))
+            transport_connected = bool(health.get("transport_connected"))
+            rpc_responsive = bool(health.get("rpc_responsive"))
+            stub_mode = bool(health.get("stub_mode"))
+
+            if stub_mode:
+                result += "🔌 Connection Status: ⚠️ STUB MODE (dev)\n"
+            else:
+                result += f"🔌 Connection Status: {'✅ Connected' if is_connected else '❌ Not Connected'}\n"
+
+            result += f"   Transport: {'✅ Connected' if transport_connected else '❌ Not Connected'}\n"
+            result += f"   Protobuf RPC: {'✅ Responsive' if rpc_responsive else '❌ Unresponsive'}\n\n"
             
             if not is_connected:
-                result += "⚠️  Device is not connected. Some information may be unavailable.\n\n"
+                result += "⚠️  Device is not connected. Some information may be unavailable.\n"
+                if health.get("last_error"):
+                    result += f"   Last error: {health.get('last_error')}\n"
+                result += "\n"
             
             # Device information
             try:
