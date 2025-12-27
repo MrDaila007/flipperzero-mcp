@@ -349,9 +349,19 @@ class BadUSBModule(FlipperModule):
             result += f"📄 Script:\n```duckyscript\n{content}\n```\n\n"
             
             if success:
-                result += "✅ Script execution initiated"
+                result += (
+                    "✅ BadUSB app launch request sent.\n\n"
+                    "⚠️  Important:\n"
+                    "- BadUSB may switch the Flipper’s USB mode to HID, which can disconnect the USB serial/RPC session.\n"
+                    "- If you don’t see keystrokes, open **BadUSB** on the Flipper manually and run the script from the device UI.\n"
+                )
             else:
-                result += "❌ Execution failed - check Flipper connection"
+                result += (
+                    "❌ Could not launch BadUSB app via RPC.\n\n"
+                    "Try:\n"
+                    "- Ensure the Flipper is connected and unlocked\n"
+                    "- Then launch **BadUSB** manually on the device and select the script\n"
+                )
             
             return [TextContent(type="text", text=result)]
             

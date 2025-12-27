@@ -13,18 +13,19 @@ from .transport.base import FlipperTransport
 
 # Import generated protobuf classes
 try:
-    from .protobuf_gen import flipper_pb2, system_pb2, property_pb2, storage_pb2
+    from .protobuf_gen import flipper_pb2, system_pb2, property_pb2, storage_pb2, application_pb2
     PROTOBUF_AVAILABLE = True
 except ImportError:
     PROTOBUF_AVAILABLE = False
     if TYPE_CHECKING:
         # For type checking only
-        from .protobuf_gen import flipper_pb2, system_pb2, property_pb2, storage_pb2
+        from .protobuf_gen import flipper_pb2, system_pb2, property_pb2, storage_pb2, application_pb2
     else:
         flipper_pb2 = None
         system_pb2 = None
         property_pb2 = None
         storage_pb2 = None
+        application_pb2 = None
 
 
 class ProtobufRPC:
@@ -298,6 +299,29 @@ class ProtobufRPC:
         except Exception:
             pass
         return None
+
+    async def app_start(self, name: str, args: str = "") -> bool:
+        """
+        Start an application via protobuf RPC (PB_App.StartRequest).
+
+        Note: On some firmwares, starting certain apps (e.g. BadUSB) may change USB mode
+        and disrupt the current transport (especially USB CDC). Callers should be prepared
+        for the connection to drop even if the start succeeded.
+        """
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+
+            req = application_pb2.StartRequest()
+            req.name = name
+            req.args = args or ""
+            main_request.app_start_request.CopyFrom(req)
+
+            resp = await self._send_rpc_message(main_request)
+            return bool(resp and resp.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
     
     async def get_device_info(self) -> Dict[str, Any]:
         """

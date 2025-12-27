@@ -108,8 +108,12 @@ class FlipperApp:
         Returns:
             True if launch successful
         """
-        # Stub: In real implementation, would use Flipper RPC protocol
-        return True
+        if not self.client.rpc:
+            return False
+        try:
+            return await self.client.rpc.app_start(app_name, args=args or "")
+        except Exception:
+            return False
     
     async def stop(self, app_name: str) -> bool:
         """
@@ -121,8 +125,9 @@ class FlipperApp:
         Returns:
             True if stop successful
         """
-        # Stub: In real implementation, would use Flipper RPC protocol
-        return True
+        # Not implemented yet over protobuf RPC in this repo.
+        # (The protobuf schema has AppExitRequest but needs target app context.)
+        return False
 
 
 class FlipperClient:

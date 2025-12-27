@@ -11,6 +11,7 @@ from flipper_mcp.modules.badusb.validator import ScriptValidator
 def mock_flipper():
     """Create mock Flipper client."""
     client = Mock()
+    client.check_sd_card_available = AsyncMock(return_value=True)
     client.storage = Mock()
     client.storage.list = AsyncMock(return_value=["test.txt", "demo.txt"])
     client.storage.read = AsyncMock(return_value="REM Test script\nSTRING Hello")

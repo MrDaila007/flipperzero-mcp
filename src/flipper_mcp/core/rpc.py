@@ -550,6 +550,20 @@ class FlipperRPC:
             except Exception:
                 return False
         return False
+
+    async def app_start(self, name: str, args: str = "") -> bool:
+        """
+        Start an application via protobuf RPC (best-effort).
+
+        Returns False if protobuf RPC isn't available or the start fails.
+        """
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.app_start(name, args=args or "")
+            except Exception:
+                return False
+        return False
     
     async def _storage_read_via_cli(self, path: str) -> str:
         """
