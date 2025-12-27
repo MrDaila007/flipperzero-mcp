@@ -1,6 +1,7 @@
 """BadUSB module for Flipper Zero MCP."""
 
 from typing import Any, List, Sequence
+import difflib
 from mcp.types import Tool, TextContent
 
 from ..base_module import FlipperModule
@@ -31,7 +32,7 @@ class BadUSBModule(FlipperModule):
     @property
     def version(self) -> str:
         """Module version."""
-        return "1.0.0"
+        return "1.1.0"
     
     @property
     def description(self) -> str:
@@ -102,6 +103,103 @@ class BadUSBModule(FlipperModule):
                 }
             ),
             Tool(
+                name="badusb_validate",
+                description="Validate a BadUSB DuckyScript payload for safety (no device changes)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "content": {
+                            "type": "string",
+                            "description": "DuckyScript content to validate"
+                        }
+                    },
+                    "required": ["content"]
+                },
+            ),
+            Tool(
+                name="badusb_write",
+                description="Write/overwrite a BadUSB script on the Flipper SD card (validated first)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Script filename to write (e.g., 'demo.txt')"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "DuckyScript content to save"
+                        },
+                        "confirm_overwrite": {
+                            "type": "boolean",
+                            "description": "Must be true to overwrite if the file already exists",
+                            "default": False
+                        }
+                    },
+                    "required": ["filename", "content"]
+                },
+            ),
+            Tool(
+                name="badusb_delete",
+                description="Delete a BadUSB script from the Flipper SD card (destructive)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Script filename to delete"
+                        },
+                        "confirm": {
+                            "type": "boolean",
+                            "description": "Must be true (safety confirmation)",
+                            "default": False
+                        }
+                    },
+                    "required": ["filename", "confirm"]
+                },
+            ),
+            Tool(
+                name="badusb_diff",
+                description="Show a unified diff between an existing script and proposed new content (no device changes)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "filename": {
+                            "type": "string",
+                            "description": "Existing script filename on the Flipper"
+                        },
+                        "proposed_content": {
+                            "type": "string",
+                            "description": "Proposed new DuckyScript content"
+                        }
+                    },
+                    "required": ["filename", "proposed_content"]
+                },
+            ),
+            Tool(
+                name="badusb_rename",
+                description="Rename a BadUSB script (implemented as read+write+delete; destructive)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "old_filename": {
+                            "type": "string",
+                            "description": "Existing script filename"
+                        },
+                        "new_filename": {
+                            "type": "string",
+                            "description": "New script filename"
+                        },
+                        "confirm": {
+                            "type": "boolean",
+                            "description": "Must be true (safety confirmation)",
+                            "default": False
+                        }
+                    },
+                    "required": ["old_filename", "new_filename", "confirm"]
+                },
+            ),
+            Tool(
                 name="badusb_execute",
                 description="Execute a BadUSB script on the target device. WARNING: This will run the script immediately!",
                 inputSchema={
@@ -164,6 +262,35 @@ class BadUSBModule(FlipperModule):
                 arguments.get("target_os", "windows"),
                 arguments.get("filename", "ai_generated.txt")
             )
+
+        elif tool_name == "badusb_validate":
+            return await self._validate_script(arguments["content"])
+
+        elif tool_name == "badusb_write":
+            return await self._write_script(
+                arguments["filename"],
+                arguments["content"],
+                arguments.get("confirm_overwrite", False),
+            )
+
+        elif tool_name == "badusb_delete":
+            return await self._delete_script(
+                arguments["filename"],
+                arguments.get("confirm", False),
+            )
+
+        elif tool_name == "badusb_diff":
+            return await self._diff_script(
+                arguments["filename"],
+                arguments["proposed_content"],
+            )
+
+        elif tool_name == "badusb_rename":
+            return await self._rename_script(
+                arguments["old_filename"],
+                arguments["new_filename"],
+                arguments.get("confirm", False),
+            )
         
         elif tool_name == "badusb_execute":
             return await self._execute_script(
@@ -182,25 +309,45 @@ class BadUSBModule(FlipperModule):
             type="text",
             text=f"❌ Error: Unknown BadUSB tool '{tool_name}'"
         )]
+
+    def _sanitize_filename(self, filename: str) -> tuple[bool, str]:
+        """
+        Prevent path traversal / unexpected paths.
+
+        BadUSB scripts live under `/ext/badusb` and should be simple filenames.
+        """
+        if not filename or not isinstance(filename, str):
+            return False, "Filename must be a non-empty string."
+        if "/" in filename or "\\" in filename:
+            return False, "Filename must not contain path separators."
+        if filename.startswith("."):
+            return False, "Filename must not start with '.'."
+        return True, ""
+
+    async def _ensure_sd_or_explain(self) -> Sequence[TextContent] | None:
+        """Shared SD card check with consistent user messaging."""
+        sd_card_available = await self.flipper.check_sd_card_available()
+        if sd_card_available:
+            return None
+        return [TextContent(
+            type="text",
+            text="❌ MicroSD card is not detected or not accessible\n\n"
+                 "This operation requires a MicroSD card to be installed in your Flipper Zero.\n"
+                 "BadUSB scripts are stored on the SD card.\n\n"
+                 "Please:\n"
+                 "1. Insert a MicroSD card into your Flipper Zero\n"
+                 "2. Ensure the card is properly formatted\n"
+                 "3. Use 'systeminfo_get' to verify SD card status\n"
+                 "4. Try again\n\n"
+                 "Note: The systeminfo module can check SD card status without requiring an SD card."
+        )]
     
     async def _list_scripts(self) -> Sequence[TextContent]:
         """List all BadUSB scripts."""
         try:
-            # Check SD card availability
-            sd_card_available = await self.flipper.check_sd_card_available()
-            if not sd_card_available:
-                return [TextContent(
-                    type="text",
-                    text="❌ MicroSD card is not detected or not accessible\n\n"
-                         "This operation requires a MicroSD card to be installed in your Flipper Zero.\n"
-                         "BadUSB scripts are stored on the SD card.\n\n"
-                         "Please:\n"
-                         "1. Insert a MicroSD card into your Flipper Zero\n"
-                         "2. Ensure the card is properly formatted\n"
-                         "3. Use 'systeminfo_get' to verify SD card status\n"
-                         "4. Try again\n\n"
-                         "Note: The systeminfo module can check SD card status without requiring an SD card."
-                )]
+            sd_msg = await self._ensure_sd_or_explain()
+            if sd_msg:
+                return sd_msg
             
             files = await self.flipper.storage.list(self.badusb_path)
             
@@ -226,21 +373,13 @@ class BadUSBModule(FlipperModule):
     async def _read_script(self, filename: str) -> Sequence[TextContent]:
         """Read script contents."""
         try:
-            # Check SD card availability
-            sd_card_available = await self.flipper.check_sd_card_available()
-            if not sd_card_available:
-                return [TextContent(
-                    type="text",
-                    text="❌ MicroSD card is not detected or not accessible\n\n"
-                         "This operation requires a MicroSD card to be installed in your Flipper Zero.\n"
-                         "BadUSB scripts are stored on the SD card.\n\n"
-                         "Please:\n"
-                         "1. Insert a MicroSD card into your Flipper Zero\n"
-                         "2. Ensure the card is properly formatted\n"
-                         "3. Use 'systeminfo_get' to verify SD card status\n"
-                         "4. Try again\n\n"
-                         "Note: The systeminfo module can check SD card status without requiring an SD card."
-                )]
+            ok, err = self._sanitize_filename(filename)
+            if not ok:
+                return [TextContent(type="text", text=f"❌ Invalid filename: {err}")]
+
+            sd_msg = await self._ensure_sd_or_explain()
+            if sd_msg:
+                return sd_msg
             
             path = f"{self.badusb_path}/{filename}"
             content = await self.flipper.storage.read(path)
@@ -261,21 +400,13 @@ class BadUSBModule(FlipperModule):
     ) -> Sequence[TextContent]:
         """Generate and save BadUSB script."""
         try:
-            # Check SD card availability
-            sd_card_available = await self.flipper.check_sd_card_available()
-            if not sd_card_available:
-                return [TextContent(
-                    type="text",
-                    text="❌ MicroSD card is not detected or not accessible\n\n"
-                         "This operation requires a MicroSD card to be installed in your Flipper Zero.\n"
-                         "BadUSB scripts must be saved to the SD card.\n\n"
-                         "Please:\n"
-                         "1. Insert a MicroSD card into your Flipper Zero\n"
-                         "2. Ensure the card is properly formatted\n"
-                         "3. Use 'systeminfo_get' to verify SD card status\n"
-                         "4. Try again\n\n"
-                         "Note: The systeminfo module can check SD card status without requiring an SD card."
-                )]
+            ok, err = self._sanitize_filename(filename)
+            if not ok:
+                return [TextContent(type="text", text=f"❌ Invalid filename: {err}")]
+
+            sd_msg = await self._ensure_sd_or_explain()
+            if sd_msg:
+                return sd_msg
             
             # Generate script
             script = self.generator.generate(description, target_os)
@@ -307,6 +438,172 @@ class BadUSBModule(FlipperModule):
                 type="text",
                 text=f"❌ Error generating script: {str(e)}"
             )]
+
+    async def _validate_script(self, content: str) -> Sequence[TextContent]:
+        """Validate script content for safety (no device changes)."""
+        try:
+            is_valid, msg = self.validator.validate(content)
+            if not is_valid:
+                return [TextContent(
+                    type="text",
+                    text=f"❌ Validation failed: {msg}\n\n```duckyscript\n{content}\n```"
+                )]
+            out = "✅ Validation passed."
+            if msg:
+                out += f"\n\n{msg}"
+            return [TextContent(type="text", text=out)]
+        except Exception as e:
+            return [TextContent(type="text", text=f"❌ Error validating script: {str(e)}")]
+
+    async def _write_script(self, filename: str, content: str, confirm_overwrite: bool) -> Sequence[TextContent]:
+        """Write (or overwrite) a script after validation."""
+        ok, err = self._sanitize_filename(filename)
+        if not ok:
+            return [TextContent(type="text", text=f"❌ Invalid filename: {err}")]
+
+        sd_msg = await self._ensure_sd_or_explain()
+        if sd_msg:
+            return sd_msg
+
+        try:
+            is_valid, msg = self.validator.validate(content)
+            if not is_valid:
+                return [TextContent(
+                    type="text",
+                    text=f"❌ Script validation failed: {msg}\n\n```duckyscript\n{content}\n```"
+                )]
+
+            # If file exists, require confirm_overwrite.
+            existing = await self.flipper.storage.list(self.badusb_path)
+            if filename in (existing or []) and not confirm_overwrite:
+                return [TextContent(
+                    type="text",
+                    text="❌ Refusing to overwrite existing script without confirmation.\n\n"
+                         f"File exists: {filename}\n\n"
+                         "Re-run with confirm_overwrite=true to overwrite."
+                )]
+
+            path = f"{self.badusb_path}/{filename}"
+            success = await self.flipper.storage.write(path, content)
+            if not success:
+                return [TextContent(type="text", text=f"❌ Failed to write {filename} to {self.badusb_path}.")]
+
+            out = f"✅ Wrote BadUSB script: {filename}\n\nPath: {path}\n"
+            if msg:
+                out += f"\n{msg}\n"
+            return [TextContent(type="text", text=out)]
+        except Exception as e:
+            return [TextContent(type="text", text=f"❌ Error writing script: {str(e)}")]
+
+    async def _delete_script(self, filename: str, confirm: bool) -> Sequence[TextContent]:
+        """Delete a script (destructive)."""
+        if not confirm:
+            return [TextContent(
+                type="text",
+                text="❌ Delete blocked: 'confirm' parameter must be true\n\n"
+                     "⚠️  WARNING: This will permanently delete the script from the SD card."
+            )]
+
+        ok, err = self._sanitize_filename(filename)
+        if not ok:
+            return [TextContent(type="text", text=f"❌ Invalid filename: {err}")]
+
+        sd_msg = await self._ensure_sd_or_explain()
+        if sd_msg:
+            return sd_msg
+
+        try:
+            path = f"{self.badusb_path}/{filename}"
+            success = await self.flipper.storage.delete(path)
+            if success:
+                return [TextContent(type="text", text=f"✅ Deleted: {filename}\nPath: {path}")]
+            return [TextContent(type="text", text=f"❌ Failed to delete: {filename}\nPath: {path}")]
+        except Exception as e:
+            return [TextContent(type="text", text=f"❌ Error deleting script: {str(e)}")]
+
+    async def _diff_script(self, filename: str, proposed_content: str) -> Sequence[TextContent]:
+        """Show a unified diff between an existing script and proposed content."""
+        ok, err = self._sanitize_filename(filename)
+        if not ok:
+            return [TextContent(type="text", text=f"❌ Invalid filename: {err}")]
+
+        sd_msg = await self._ensure_sd_or_explain()
+        if sd_msg:
+            return sd_msg
+
+        try:
+            path = f"{self.badusb_path}/{filename}"
+            existing = await self.flipper.storage.read(path)
+            existing_lines = (existing or "").splitlines(keepends=True)
+            proposed_lines = (proposed_content or "").splitlines(keepends=True)
+            diff = "".join(difflib.unified_diff(
+                existing_lines,
+                proposed_lines,
+                fromfile=f"{filename} (current)",
+                tofile=f"{filename} (proposed)",
+            ))
+            if not diff:
+                return [TextContent(type="text", text="✅ No changes (proposed content matches existing).")]
+            return [TextContent(type="text", text=f"```diff\n{diff}\n```")]
+        except Exception as e:
+            return [TextContent(type="text", text=f"❌ Error diffing script: {str(e)}")]
+
+    async def _rename_script(self, old_filename: str, new_filename: str, confirm: bool) -> Sequence[TextContent]:
+        """Rename a script via read+write+delete (destructive)."""
+        if not confirm:
+            return [TextContent(
+                type="text",
+                text="❌ Rename blocked: 'confirm' parameter must be true\n\n"
+                     "⚠️  WARNING: This performs a write+delete operation on the SD card."
+            )]
+
+        ok1, err1 = self._sanitize_filename(old_filename)
+        if not ok1:
+            return [TextContent(type="text", text=f"❌ Invalid old_filename: {err1}")]
+        ok2, err2 = self._sanitize_filename(new_filename)
+        if not ok2:
+            return [TextContent(type="text", text=f"❌ Invalid new_filename: {err2}")]
+        if old_filename == new_filename:
+            return [TextContent(type="text", text="❌ old_filename and new_filename are the same.")]
+
+        sd_msg = await self._ensure_sd_or_explain()
+        if sd_msg:
+            return sd_msg
+
+        try:
+            old_path = f"{self.badusb_path}/{old_filename}"
+            new_path = f"{self.badusb_path}/{new_filename}"
+            content = await self.flipper.storage.read(old_path)
+            if content == "":
+                return [TextContent(type="text", text=f"❌ Could not read source file: {old_filename}")]
+
+            # Refuse to overwrite destination without explicit overwrite flow.
+            existing = await self.flipper.storage.list(self.badusb_path)
+            if new_filename in (existing or []):
+                return [TextContent(
+                    type="text",
+                    text=f"❌ Refusing to rename over an existing destination: {new_filename}\n\n"
+                         "Delete it first, or use badusb_write with confirm_overwrite=true."
+                )]
+
+            wrote = await self.flipper.storage.write(new_path, content)
+            if not wrote:
+                return [TextContent(type="text", text=f"❌ Failed to write destination file: {new_filename}")]
+
+            deleted = await self.flipper.storage.delete(old_path)
+            if not deleted:
+                return [TextContent(
+                    type="text",
+                    text=f"⚠️  Wrote destination but failed to delete source.\n\n"
+                         f"Destination: {new_filename}\nSource still exists: {old_filename}"
+                )]
+
+            return [TextContent(
+                type="text",
+                text=f"✅ Renamed script.\n\nFrom: {old_filename}\nTo: {new_filename}"
+            )]
+        except Exception as e:
+            return [TextContent(type="text", text=f"❌ Error renaming script: {str(e)}")]
     
     async def _execute_script(
         self, filename: str, confirm: bool
@@ -321,21 +618,13 @@ class BadUSBModule(FlipperModule):
             )]
         
         try:
-            # Check SD card availability
-            sd_card_available = await self.flipper.check_sd_card_available()
-            if not sd_card_available:
-                return [TextContent(
-                    type="text",
-                    text="❌ MicroSD card is not detected or not accessible\n\n"
-                         "This operation requires a MicroSD card to be installed in your Flipper Zero.\n"
-                         "BadUSB scripts are stored on the SD card and must be accessible to execute.\n\n"
-                         "Please:\n"
-                         "1. Insert a MicroSD card into your Flipper Zero\n"
-                         "2. Ensure the card is properly formatted\n"
-                         "3. Use 'systeminfo_get' to verify SD card status\n"
-                         "4. Try again\n\n"
-                         "Note: The systeminfo module can check SD card status without requiring an SD card."
-                )]
+            ok, err = self._sanitize_filename(filename)
+            if not ok:
+                return [TextContent(type="text", text=f"❌ Invalid filename: {err}")]
+
+            sd_msg = await self._ensure_sd_or_explain()
+            if sd_msg:
+                return sd_msg
             
             path = f"{self.badusb_path}/{filename}"
             
@@ -376,21 +665,9 @@ class BadUSBModule(FlipperModule):
     ) -> Sequence[TextContent]:
         """Complete workflow: generate, validate, save, and optionally execute."""
         try:
-            # Check SD card availability first
-            sd_card_available = await self.flipper.check_sd_card_available()
-            if not sd_card_available:
-                return [TextContent(
-                    type="text",
-                    text="❌ MicroSD card is not detected or not accessible\n\n"
-                         "This operation requires a MicroSD card to be installed in your Flipper Zero.\n"
-                         "BadUSB scripts must be saved to the SD card.\n\n"
-                         "Please:\n"
-                         "1. Insert a MicroSD card into your Flipper Zero\n"
-                         "2. Ensure the card is properly formatted\n"
-                         "3. Use 'systeminfo_get' to verify SD card status\n"
-                         "4. Try again\n\n"
-                         "Note: The systeminfo module can check SD card status without requiring an SD card."
-                )]
+            sd_msg = await self._ensure_sd_or_explain()
+            if sd_msg:
+                return sd_msg
             
             result = "🤖 BadUSB Workflow\n"
             result += "=" * 50 + "\n\n"

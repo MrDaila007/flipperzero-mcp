@@ -128,6 +128,23 @@ class FlipperRPC:
             return len(response) > 0
         except Exception:
             return False
+
+    async def protobuf_ping(self, data: bytes = b"mcp_health") -> Optional[bytes]:
+        """
+        Send a protobuf RPC ping (nanopb-delimited) and return echoed bytes.
+
+        This is the most reliable "is RPC alive?" probe we have in this repo.
+
+        Returns:
+            Echoed bytes on success, or None on failure.
+        """
+        self._ensure_protobuf_rpc()
+        if not self.protobuf_rpc:
+            return None
+        try:
+            return await self.protobuf_rpc.ping(data=data)
+        except Exception:
+            return None
     
     async def get_device_info(self) -> Dict[str, Any]:
         """

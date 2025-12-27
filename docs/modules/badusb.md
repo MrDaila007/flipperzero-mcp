@@ -91,6 +91,57 @@ Notes:
 - Script generation is currently template/pattern based (see `flipper_mcp.modules.badusb.generator.DuckyScriptGenerator`).
 - Scripts are validated with `flipper_mcp.modules.badusb.validator.ScriptValidator`.
 
+### `badusb_validate`
+
+Validate a DuckyScript payload **without** writing it to the device.
+
+Parameters:
+
+- `content` (string)
+
+### `badusb_write`
+
+Write (or overwrite) a script on the Flipper’s SD card under `/ext/badusb`.
+
+Parameters:
+
+- `filename` (string)
+- `content` (string)
+- `confirm_overwrite` (boolean; default: `false`): required to overwrite if the file already exists
+
+Notes:
+
+- The script is validated before writing.
+- Filenames are restricted to simple filenames (no path separators).
+
+### `badusb_delete`
+
+Delete a script from `/ext/badusb` (**destructive**).
+
+Parameters:
+
+- `filename` (string)
+- `confirm` (boolean; must be `true`)
+
+### `badusb_diff`
+
+Show a unified diff between an existing device script and proposed content (no device changes).
+
+Parameters:
+
+- `filename` (string)
+- `proposed_content` (string)
+
+### `badusb_rename`
+
+Rename a script (**destructive**): implemented as `read -> write -> delete`.
+
+Parameters:
+
+- `old_filename` (string)
+- `new_filename` (string)
+- `confirm` (boolean; must be `true`)
+
 ### `badusb_execute`
 
 Execute a script immediately.

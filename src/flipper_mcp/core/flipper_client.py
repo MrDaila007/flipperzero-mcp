@@ -1,6 +1,8 @@
 """Flipper Zero RPC client wrapper."""
 
 from typing import Any, Optional
+from datetime import datetime, timezone
+
 from .transport.base import FlipperTransport
 from .rpc import FlipperRPC
 
@@ -149,8 +151,13 @@ class FlipperClient:
             transport: Transport layer for communication
         """
         self.transport = transport
+        # NOTE: `connected` historically meant "server is willing to route tools".
+        # For authoritative health, use `get_connection_health()` which checks
+        # transport state and protobuf RPC responsiveness.
         self.connected = False
         self.rpc: Optional[FlipperRPC] = None
+        self.stub_mode: bool = False
+        self.last_connection_error: Optional[str] = None
         
         # Sub-clients
         self.storage = FlipperStorage(self)
@@ -166,7 +173,13 @@ class FlipperClient:
         Returns:
             True if connection successful
         """
-        if not await self.transport.connect():
+        try:
+            ok = await self.transport.connect()
+        except Exception as e:
+            ok = False
+            self.last_connection_error = str(e)
+
+        if not ok:
             return False
         
         # Initialize RPC client
@@ -179,12 +192,79 @@ class FlipperClient:
         # `start_rpc_session` negotiation for protobuf RPC.
         
         self.connected = True
+        self.last_connection_error = None
         return True
     
     async def disconnect(self) -> None:
         """Disconnect from Flipper Zero."""
-        await self.transport.disconnect()
+        try:
+            await self.transport.disconnect()
+        except Exception as e:
+            # Best-effort; a dead transport may already be gone.
+            self.last_connection_error = str(e)
         self.connected = False
+
+    async def get_connection_health(self, probe_rpc: bool = True) -> dict[str, Any]:
+        """
+        Authoritative connection health.
+
+        `connected` is true only if:
+        - transport reports connected, AND
+        - protobuf RPC ping succeeds (unless probe_rpc=False)
+        """
+        ts = datetime.now(timezone.utc).isoformat()
+
+        transport_connected = False
+        transport_name: Optional[str] = None
+        transport_details: dict[str, Any] = {}
+        last_error: Optional[str] = self.last_connection_error
+
+        try:
+            if self.transport:
+                transport_name = self.transport.get_name()
+                try:
+                    transport_connected = bool(await self.transport.is_connected())
+                except Exception as e:
+                    transport_connected = False
+                    last_error = last_error or str(e)
+
+                # Best-effort details (USB/WiFi)
+                if hasattr(self.transport, "port"):
+                    transport_details["port"] = getattr(self.transport, "port")
+                if hasattr(self.transport, "host"):
+                    transport_details["host"] = getattr(self.transport, "host")
+                if hasattr(self.transport, "baudrate"):
+                    transport_details["baudrate"] = getattr(self.transport, "baudrate")
+        except Exception as e:
+            transport_connected = False
+            last_error = last_error or str(e)
+
+        rpc_responsive = False
+        rpc_echo: Optional[str] = None
+        if probe_rpc and transport_connected and self.rpc:
+            try:
+                echoed = await self.rpc.protobuf_ping(b"mcp_health")
+                if echoed == b"mcp_health":
+                    rpc_responsive = True
+                    rpc_echo = "mcp_health"
+            except Exception as e:
+                last_error = last_error or str(e)
+
+        connected = bool(transport_connected and (rpc_responsive if probe_rpc else True))
+
+        return {
+            "timestamp": ts,
+            "connected": connected,
+            "transport_connected": bool(transport_connected),
+            "rpc_responsive": bool(rpc_responsive) if probe_rpc else None,
+            "rpc_echo": rpc_echo,
+            "transport": {
+                "type": transport_name,
+                **transport_details,
+            },
+            "stub_mode": bool(self.stub_mode),
+            "last_error": last_error,
+        }
     
     async def get_firmware_version(self) -> str:
         """

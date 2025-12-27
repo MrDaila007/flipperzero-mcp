@@ -26,7 +26,7 @@ def test_badusb_module_properties(mock_flipper):
     module = BadUSBModule(mock_flipper)
     
     assert module.name == "badusb"
-    assert module.version == "1.0.0"
+    assert module.version == "1.1.0"
     assert "BadUSB" in module.description
 
 
@@ -35,11 +35,16 @@ def test_badusb_tools(mock_flipper):
     module = BadUSBModule(mock_flipper)
     tools = module.get_tools()
     
-    assert len(tools) == 5
+    assert len(tools) == 10
     tool_names = [tool.name for tool in tools]
     assert "badusb_list" in tool_names
     assert "badusb_read" in tool_names
     assert "badusb_generate" in tool_names
+    assert "badusb_validate" in tool_names
+    assert "badusb_write" in tool_names
+    assert "badusb_delete" in tool_names
+    assert "badusb_diff" in tool_names
+    assert "badusb_rename" in tool_names
     assert "badusb_execute" in tool_names
     assert "badusb_workflow" in tool_names
 
