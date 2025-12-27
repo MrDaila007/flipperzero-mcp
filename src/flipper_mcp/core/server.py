@@ -180,6 +180,8 @@ async def main() -> None:
     # In production, this would be loaded from a config file
     env_transport = os.environ.get("FLIPPER_TRANSPORT")
     env_port = os.environ.get("FLIPPER_PORT")
+    env_wifi_host = os.environ.get("FLIPPER_WIFI_HOST")
+    env_wifi_port = os.environ.get("FLIPPER_WIFI_PORT")
     config = {
         "transport": {
             "type": env_transport or "usb",  # or "wifi", "bluetooth"
@@ -189,8 +191,8 @@ async def main() -> None:
                 "baudrate": 115200
             },
             "wifi": {
-                "host": "192.168.1.1",
-                "port": 8080
+                "host": env_wifi_host or "192.168.1.1",
+                "port": int(env_wifi_port) if env_wifi_port else 8080
             },
             "bluetooth": {
                 "address": None  # Auto-discover

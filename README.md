@@ -37,6 +37,8 @@ The CLI currently uses environment variables for configuration:
 
 - `FLIPPER_TRANSPORT`: `usb` (default), `wifi`, `bluetooth`/`ble`
 - `FLIPPER_PORT`: override the USB serial device path (only used for `usb`)
+- `FLIPPER_WIFI_HOST`: Flipper WiFi dev board host/IP (only used for `wifi`)
+- `FLIPPER_WIFI_PORT`: Flipper WiFi dev board TCP port (only used for `wifi`)
 - `FLIPPER_DEBUG`: enable protobuf RPC debug logging (`1`, `true`, `yes`, `on`)
 - `FLIPPER_FORCE_START_RPC_SESSION`: force sending `start_rpc_session` on connect (`1`, `true`, `yes`, `on`)
 
@@ -50,6 +52,8 @@ flipper-mcp
 
 # Use WiFi transport
 export FLIPPER_TRANSPORT=wifi
+export FLIPPER_WIFI_HOST=192.168.1.1
+export FLIPPER_WIFI_PORT=8080
 flipper-mcp
 ```
 
@@ -68,6 +72,11 @@ See `docs/claude_setup.md`.
 - `badusb_list`
 - `badusb_read`
 - `badusb_generate`
+- `badusb_validate`
+- `badusb_write`
+- `badusb_delete`
+- `badusb_diff`
+- `badusb_rename`
 - `badusb_execute` (requires `confirm=true`)
 - `badusb_workflow`
 
