@@ -3,6 +3,7 @@
 ## Getting started
 
 - `claude_setup.md`: Configure the server for Claude Desktop
+- `wifi_dev_board.md`: **WiFi Dev Board setup, architecture, and protobuf RPC over WiFi**
 
 ## Modules
 
