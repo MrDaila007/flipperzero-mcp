@@ -148,9 +148,13 @@ If you're building custom firmware or need modifications:
 # Install PlatformIO
 pip install platformio
 
-# Clone firmware repository (example)
-git clone https://github.com/esp32-wifi-uart-bridge/firmware.git
-cd firmware
+# NOTE: The following is a conceptual example. You'll need to create or find
+# a compatible ESP32 WiFi-UART bridge firmware. See references section for
+# resources on ESP32 firmware development.
+
+# Example firmware structure (you would create this):
+# git clone https://github.com/YOUR-USERNAME/esp32-flipper-wifi-bridge.git
+# cd esp32-flipper-wifi-bridge
 
 # Configure WiFi credentials in platformio.ini or src/config.h
 # Edit src/config.h:
@@ -160,8 +164,10 @@ cd firmware
 #   #define UART_BAUD 115200
 
 # Build and upload
-pio run --target upload
+# pio run --target upload
 ```
+
+**Note**: As of this writing, there is no official pre-built WiFi bridge firmware repository. You may need to create your own based on the reference implementation provided in the "ESP32 Firmware Reference Implementation" section below, or use existing ESP32 WiFi-serial bridge projects as a starting point.
 
 ### WiFi Configuration
 
@@ -1412,6 +1418,16 @@ asyncio.run(test())
 - **ESP32 Official**: [espressif.com/en/products/socs/esp32](https://www.espressif.com/en/products/socs/esp32)
 - **ESP-IDF Documentation**: [docs.espressif.com/projects/esp-idf](https://docs.espressif.com/projects/esp-idf/en/latest/)
 - **Arduino ESP32**: [github.com/espressif/arduino-esp32](https://github.com/espressif/arduino-esp32)
+- **PlatformIO**: [platformio.org](https://platformio.org/) - Build system for ESP32 development
+- **ESP32 WiFi Examples**: [github.com/espressif/esp-idf/tree/master/examples/wifi](https://github.com/espressif/esp-idf/tree/master/examples/wifi)
+
+### ESP32 Bridge Projects (Reference Implementations)
+
+These open-source projects can serve as starting points for creating WiFi-UART bridge firmware:
+
+- **ESP-Link**: [github.com/jeelabs/esp-link](https://github.com/jeelabs/esp-link) - WiFi-serial bridge for ESP8266/ESP32
+- **WiFi Serial Bridge**: [github.com/AlphaLima/ESP32-Serial-Bridge](https://github.com/AlphaLima/ESP32-Serial-Bridge) - ESP32 transparent serial bridge
+- **ESP32 Examples**: Search GitHub for "ESP32 UART WiFi bridge" for additional implementations
 
 ### Protocol Buffers
 

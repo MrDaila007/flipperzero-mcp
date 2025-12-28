@@ -260,8 +260,9 @@ Notes: C, D, E, F, G, A, B, C5, B, A, G, F, E, D, C
                 
                 # Show key details from result
                 if "Path:" in result_text:
-                    path_line = [line for line in result_text.split('\n') if 'Path:' in line][0]
-                    print(f"   {path_line.strip()}")
+                    path_lines = [line for line in result_text.split('\n') if 'Path:' in line]
+                    if path_lines:
+                        print(f"   {path_lines[0].strip()}")
                     
         except Exception as e:
             print(f"   ❌ Error: {e}")
