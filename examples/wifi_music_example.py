@@ -249,7 +249,7 @@ Notes: C, D, E, F, G, A, B, C5, B, A, G, F, E, D, C
             })
             
             # Display result
-            if result and len(result) > 0:
+            if result and isinstance(result, (list, tuple)) and len(result) > 0:
                 result_text = result[0].text
                 
                 if "✅" in result_text:
@@ -263,6 +263,8 @@ Notes: C, D, E, F, G, A, B, C5, B, A, G, F, E, D, C
                     path_lines = [line for line in result_text.split('\n') if 'Path:' in line]
                     if path_lines:
                         print(f"   {path_lines[0].strip()}")
+            else:
+                print(f"   ❌ Upload failed (no result returned)")
                     
         except Exception as e:
             print(f"   ❌ Error: {e}")
