@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import sys
 from typing import Any, Sequence
 
 from mcp.server import Server
@@ -177,9 +178,18 @@ class FlipperMCPServer:
         2. Connects to Flipper Zero
         3. Discovers and loads modules
         """
-        print("=" * 60)
-        print("Flipper Zero MCP Server - Modular Architecture")
-        print("=" * 60)
+        # IMPORTANT: When running under MCP stdio, stdout is reserved for JSON-RPC.
+        # Send all human-readable logs to stderr.
+        def _log(msg: str = "") -> None:
+            try:
+                print(msg, file=sys.stderr)
+            except Exception:
+                # Best-effort only (stdio may be closed by client).
+                pass
+
+        _log("=" * 60)
+        _log("Flipper Zero MCP Server - Modular Architecture")
+        _log("=" * 60)
         
         # Create transport based on config
         transport_type = self.config.get("transport", {}).get("type", "usb")
@@ -187,17 +197,17 @@ class FlipperMCPServer:
         try:
             transport = get_transport(transport_type, self.config)
         except ValueError as e:
-            print(f"\n❌ {e}")
+            _log(f"\n❌ {e}")
             raise
         
         # Create Flipper client
-        print(f"\n🔌 Initializing {transport_type.upper()} transport...")
+        _log(f"\n🔌 Initializing {transport_type.upper()} transport...")
         self.flipper = FlipperClient(transport)
         
         # Try to connect
-        print(f"   Connecting to Flipper Zero...")
+        _log("   Connecting to Flipper Zero...")
         if not await self.flipper.connect():
-            print("❌ Failed to connect to Flipper Zero")
+            _log("❌ Failed to connect to Flipper Zero")
             allow_stub = os.environ.get("FLIPPER_MCP_ALLOW_STUB_MODE", "").lower() in (
                 "1",
                 "true",
@@ -205,15 +215,15 @@ class FlipperMCPServer:
                 "on",
             )
             if allow_stub:
-                print("\n⚠️  NOTE: Running in DEV STUB MODE (explicitly enabled).")
-                print("   In production, ensure Flipper Zero is connected via USB/WiFi/BLE")
-                print("   Set FLIPPER_MCP_ALLOW_STUB_MODE=0 to disable this behavior.")
+                _log("\n⚠️  NOTE: Running in DEV STUB MODE (explicitly enabled).")
+                _log("   In production, ensure Flipper Zero is connected via USB/WiFi/BLE")
+                _log("   Set FLIPPER_MCP_ALLOW_STUB_MODE=0 to disable this behavior.")
                 # Dev-only: allow tool routing even without hardware.
                 self.flipper.connected = True
                 self.stub_mode = True
             else:
-                print("\n⚠️  Not connected (stub mode disabled).")
-                print("   Only connection tools will be usable until a Flipper is connected.")
+                _log("\n⚠️  Not connected (stub mode disabled).")
+                _log("   Only connection tools will be usable until a Flipper is connected.")
                 self.flipper.connected = False
                 self.stub_mode = False
         else:
@@ -225,8 +235,8 @@ class FlipperMCPServer:
         except Exception:
             pass
         
-        print(
-            "✓ Connected to Flipper Zero" + (" (STUB MODE)" if self.stub_mode else "")
+        _log(
+            ("✓ Connected to Flipper Zero" + (" (STUB MODE)" if self.stub_mode else ""))
             if self.flipper.connected
             else "⚠️  Flipper Zero not connected"
         )
@@ -234,38 +244,38 @@ class FlipperMCPServer:
         # Get device info
         try:
             device_info = await self.flipper.get_device_info()
-            print(f"   Device: {device_info.get('name', 'Unknown')}")
-            print(f"   Firmware: {device_info.get('firmware', 'Unknown')}")
+            _log(f"   Device: {device_info.get('name', 'Unknown')}")
+            _log(f"   Firmware: {device_info.get('firmware', 'Unknown')}")
         except Exception as e:
-            print(f"   (Could not get device info: {e})")
+            _log(f"   (Could not get device info: {e})")
         
         # Initialize module registry
-        print("\n📦 Discovering modules...")
+        _log("\n📦 Discovering modules...")
         self.registry = ModuleRegistry(self.flipper)
         self.registry.discover_modules()
         
         # Load all modules
-        print("\n⚡ Loading modules...")
+        _log("\n⚡ Loading modules...")
         await self.registry.load_all()
         
         # Print summary
         enabled_modules = [m for m in self.registry.modules.values() if m.enabled]
         total_tools = sum(len(m.get_tools()) for m in enabled_modules)
         
-        print(f"\n✓ {len(enabled_modules)} module(s) loaded, {total_tools} tool(s) available")
+        _log(f"\n✓ {len(enabled_modules)} module(s) loaded, {total_tools} tool(s) available")
         
         if enabled_modules:
-            print("\n📋 Available modules:")
+            _log("\n📋 Available modules:")
             for module in enabled_modules:
                 tools = module.get_tools()
-                print(f"   • {module.name} v{module.version} - {len(tools)} tool(s)")
-                print(f"     {module.description}")
+                _log(f"   • {module.name} v{module.version} - {len(tools)} tool(s)")
+                _log(f"     {module.description}")
         else:
-            print("\n⚠️  No modules loaded. The server will have no tools available.")
+            _log("\n⚠️  No modules loaded. The server will have no tools available.")
         
-        print("\n" + "=" * 60)
-        print("🚀 Server ready! Waiting for MCP connections...")
-        print("=" * 60 + "\n")
+        _log("\n" + "=" * 60)
+        _log("🚀 Server ready! Waiting for MCP connections...")
+        _log("=" * 60 + "\n")
     
     async def run(self) -> None:
         """
@@ -287,7 +297,10 @@ class FlipperMCPServer:
                 await self.registry.unload_all()
             if self.flipper:
                 await self.flipper.disconnect()
-                print("\n👋 Disconnected from Flipper Zero")
+                try:
+                    print("\n👋 Disconnected from Flipper Zero", file=sys.stderr)
+                except Exception:
+                    pass
 
 
 async def main() -> None:

@@ -1,6 +1,7 @@
 """USB Serial transport for Flipper Zero."""
 
 import asyncio
+import sys
 from typing import Optional
 import serial
 import serial.tools.list_ports
@@ -81,19 +82,19 @@ class USBTransport(FlipperTransport):
         # Return the first detected port
         if detected_ports:
             device, port = detected_ports[0]
-            print(f"   Detected Flipper Zero at {device}")
+            print(f"   Detected Flipper Zero at {device}", file=sys.stderr)
             return device
         
         # Platform-specific fallback
         if system == "Darwin":
             # macOS: try common usbmodem pattern
             fallback = "/dev/tty.usbmodemflip_1"
-            print(f"   ⚠️  No Flipper Zero detected, using fallback: {fallback}")
+            print(f"   ⚠️  No Flipper Zero detected, using fallback: {fallback}", file=sys.stderr)
             return fallback
         else:
             # Linux: try common ACM port
             fallback = "/dev/ttyACM0"
-            print(f"   ⚠️  No Flipper Zero detected, using fallback: {fallback}")
+            print(f"   ⚠️  No Flipper Zero detected, using fallback: {fallback}", file=sys.stderr)
             return fallback
     
     async def connect(self) -> bool:
@@ -118,7 +119,7 @@ class USBTransport(FlipperTransport):
             return True
             
         except (serial.SerialException, OSError) as e:
-            print(f"USB connection failed: {e}")
+            print(f"USB connection failed: {e}", file=sys.stderr)
             self.connected = False
             return False
     

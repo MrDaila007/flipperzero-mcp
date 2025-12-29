@@ -18,8 +18,11 @@ The default server entry point (`flipper_mcp.core.server.main`) reads:
 
 - `FLIPPER_TRANSPORT`: transport type (`auto` default, `usb`, `wifi`, `bluetooth`/`ble`)
 - `FLIPPER_PORT`: override USB serial device path (only used when `FLIPPER_TRANSPORT=usb`)
+- `FLIPPER_WIFI_HOST`: WiFi Dev Board host/IP (only used when `FLIPPER_TRANSPORT=wifi`, or when `auto` falls back to WiFi)
+- `FLIPPER_WIFI_PORT`: WiFi Dev Board TCP port (only used when `FLIPPER_TRANSPORT=wifi`, or when `auto` falls back to WiFi)
 - `FLIPPER_DEBUG`: enable protobuf RPC debug logs (`1`, `true`, `yes`, `on`)
 - `FLIPPER_FORCE_START_RPC_SESSION`: always send the CLI command `start_rpc_session` before protobuf RPC (`1`, `true`, `yes`, `on`)
+- `FLIPPER_MCP_ALLOW_STUB_MODE`: DEV ONLY. If enabled (`1`, `true`, `yes`, `on`), the server will route tools even without hardware (useful for module dev).
 
 ### Auto transport selection
 

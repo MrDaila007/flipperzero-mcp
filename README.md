@@ -20,6 +20,7 @@ Modular Model Context Protocol (MCP) server for interacting with a Flipper Zero 
 - `docs/index.md`: documentation hub
 - `docs/claude_setup.md`: Claude Desktop setup (kept up to date)
 - `docs/wifi_dev_board.md`: **WiFi Dev Board setup, architecture, and protobuf RPC over WiFi**
+- `firmware/tcp_uart_bridge/README.md`: WiFi Dev Board TCP↔UART bridge firmware (“flirmware”)
 - `docs/modules/`: built-in module documentation
 - `docs/core/`: core server documentation
 

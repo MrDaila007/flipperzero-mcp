@@ -91,3 +91,4 @@ async def test_auto_does_not_try_wifi_when_host_not_set(monkeypatch):
     assert await t.is_connected() is False
 
 
+

@@ -122,7 +122,7 @@ idf.py menuconfig
 ### WiFi connects but no RPC response
 - Check UART wiring between ESP32 and Flipper
 - Verify Flipper is on and not in another app
-- Check baud rate matches (default: 115200)
+- Ensure the bridge firmware is running and has completed Expansion negotiation (UART speed may change after connect; see `BRIDGE_UART_BAUD_RATE`)
 
 ### Reset WiFi credentials
 Clear stored credentials via code (call `wifi_manager_reset_credentials()`), or erase NVS by reflashing/erasing flash as part of your ESP-IDF workflow.

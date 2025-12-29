@@ -454,7 +454,7 @@ For advanced transport configuration, you can modify the server code or use envi
 ```bash
 # USB with specific port
 export FLIPPER_TRANSPORT=usb
-export FLIPPER_USB_PORT=/dev/ttyUSB0
+export FLIPPER_PORT=/dev/ttyUSB0
 
 # WiFi configuration
 export FLIPPER_TRANSPORT=wifi
@@ -465,6 +465,8 @@ export FLIPPER_WIFI_PORT=8080
 export FLIPPER_TRANSPORT=bluetooth
 export FLIPPER_BT_ADDRESS=AA:BB:CC:DD:EE:FF
 ```
+
+For WiFi Dev Board firmware setup and bridge details, see `docs/wifi_dev_board.md` and `firmware/tcp_uart_bridge/README.md`.
 
 ### Running in Development Mode
 

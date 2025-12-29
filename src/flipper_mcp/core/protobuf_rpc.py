@@ -8,6 +8,7 @@ Uses generated protobuf code from proto/ directory.
 """
 
 import os
+import sys
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from .transport.base import FlipperTransport
 
@@ -105,7 +106,8 @@ class ProtobufRPC:
                 return None
 
             if self.debug:
-                print(f"[protobuf] rx delimited len={payload_len}")
+                # stdout is reserved for MCP JSON-RPC when running under stdio.
+                print(f"[protobuf] rx delimited len={payload_len}", file=sys.stderr)
 
             msg = flipper_pb2.Main()
             msg.ParseFromString(payload)
@@ -204,9 +206,33 @@ class ProtobufRPC:
             "on",
         )
 
+        # WiFi Dev Board transport already speaks nanopb-delimited protobuf over TCP (no CLI mode).
+        # Attempting to send `start_rpc_session` bytes would corrupt the session.
+        try:
+            transport_name = ""
+            if hasattr(self.transport, "get_name"):
+                transport_name = str(self.transport.get_name() or "")
+            is_wifi_transport = "wifi" in transport_name.lower() or hasattr(self.transport, "host")
+        except Exception:
+            is_wifi_transport = False
+
+        # For WiFi transport, there is no CLI->RPC mode switch. Treat the session as started
+        # and avoid sending any probe pings here (those can race with the caller's real ping
+        # and cause false negatives in health checks).
+        if is_wifi_transport:
+            self._rpc_session_started = True
+            return
+
         if not force_start:
-            if await probe_rpc(timeout=0.4):
+            # WiFi can have slightly higher latency; probe longer before deciding it's not RPC.
+            probe_timeout = 1.2 if is_wifi_transport else 0.4
+            if await probe_rpc(timeout=probe_timeout):
                 self._rpc_session_started = True
+                return
+
+            # On WiFi transport, do NOT attempt CLI session switching.
+            if is_wifi_transport:
+                self._rpc_session_started = False
                 return
 
         # Switch to RPC mode via CLI command (CR-only) and verify by probing.

@@ -9,6 +9,7 @@ Selection policy:
 
 from __future__ import annotations
 
+import sys
 from typing import Optional
 
 from .base import FlipperTransport
@@ -56,7 +57,7 @@ class AutoTransport(FlipperTransport):
             self._active = usb
             self.connected = True
             self.clear_receive_buffer()
-            print("   Auto transport selected: USB")
+            print("   Auto transport selected: USB", file=sys.stderr)
             return True
 
         # USB failed; only try WiFi if it is explicitly configured.
@@ -70,9 +71,9 @@ class AutoTransport(FlipperTransport):
                 host = wifi_cfg.get("host")
                 port = wifi_cfg.get("port")
                 if host and port:
-                    print(f"   Auto transport selected: WiFi ({host}:{port})")
+                    print(f"   Auto transport selected: WiFi ({host}:{port})", file=sys.stderr)
                 else:
-                    print("   Auto transport selected: WiFi")
+                    print("   Auto transport selected: WiFi", file=sys.stderr)
                 return True
 
         self._active = None

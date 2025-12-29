@@ -1,6 +1,7 @@
 """WiFi transport for Flipper Zero (ESP32 WiFi Dev Board)."""
 
 import asyncio
+import sys
 from typing import Optional
 
 from .base import FlipperTransport
@@ -47,7 +48,8 @@ class WiFiTransport(FlipperTransport):
             await self._drain_socket_buffer(max_seconds=0.2)
             return True
         except (OSError, asyncio.TimeoutError) as e:
-            print(f"WiFi connection failed: {e}")
+            # stdout is reserved for MCP JSON-RPC when running under stdio.
+            print(f"WiFi connection failed: {e}", file=sys.stderr)
             self.connected = False
             return False
     

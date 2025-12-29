@@ -1,5 +1,6 @@
 """Module registry for discovering and managing Flipper MCP modules."""
 
+import sys
 from typing import Any, Dict, List, Sequence, Type
 from importlib import import_module
 import inspect
@@ -66,10 +67,10 @@ class ModuleRegistry:
                                 self.register_module(obj)
                                 
                     except (ImportError, AttributeError) as e:
-                        print(f"⚠️  Could not load module {modname}: {e}")
+                        print(f"⚠️  Could not load module {modname}: {e}", file=sys.stderr)
                         
             except ImportError as e:
-                print(f"⚠️  Could not import package {path}: {e}")
+                print(f"⚠️  Could not import package {path}: {e}", file=sys.stderr)
     
     def register_module(self, module_class: Type[FlipperModule]) -> None:
         """
@@ -85,7 +86,7 @@ class ModuleRegistry:
             # Validate environment
             is_valid, error = module.validate_environment()
             if not is_valid:
-                print(f"⚠️  Module {module.name} not loaded: {error}")
+                print(f"⚠️  Module {module.name} not loaded: {error}", file=sys.stderr)
                 return
             
             # Check dependencies
@@ -95,16 +96,16 @@ class ModuleRegistry:
             ]
             
             if missing_deps:
-                print(f"⚠️  Module {module.name} missing dependencies: {missing_deps}")
+                print(f"⚠️  Module {module.name} missing dependencies: {missing_deps}", file=sys.stderr)
                 return
             
             # Register module
             self.modules[module.name] = module
             self.load_order.append(module.name)
-            print(f"✓ Registered module: {module.name} v{module.version}")
+            print(f"✓ Registered module: {module.name} v{module.version}", file=sys.stderr)
             
         except Exception as e:
-            print(f"✗ Failed to register module: {e}")
+            print(f"✗ Failed to register module: {e}", file=sys.stderr)
     
     async def load_all(self) -> None:
         """Load all registered modules."""
@@ -112,9 +113,9 @@ class ModuleRegistry:
             module = self.modules[name]
             try:
                 await module.on_load()
-                print(f"✓ Loaded: {name}")
+                print(f"✓ Loaded: {name}", file=sys.stderr)
             except Exception as e:
-                print(f"✗ Failed to load {name}: {e}")
+                print(f"✗ Failed to load {name}: {e}", file=sys.stderr)
                 module.enabled = False
     
     async def unload_all(self) -> None:
@@ -124,7 +125,7 @@ class ModuleRegistry:
             try:
                 await module.on_unload()
             except Exception as e:
-                print(f"⚠️  Error unloading {name}: {e}")
+                print(f"⚠️  Error unloading {name}: {e}", file=sys.stderr)
     
     def get_all_tools(self) -> List[Tool]:
         """
@@ -139,7 +140,7 @@ class ModuleRegistry:
                 try:
                     tools.extend(module.get_tools())
                 except Exception as e:
-                    print(f"⚠️  Error getting tools from {module.name}: {e}")
+                    print(f"⚠️  Error getting tools from {module.name}: {e}", file=sys.stderr)
         return tools
     
     async def route_tool_call(

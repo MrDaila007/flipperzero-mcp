@@ -6,6 +6,7 @@
 
 #include "wifi_manager.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,6 +38,9 @@ static const char *TAG = "wifi_manager";
 #define MAX_RETRY_COUNT 5
 #define WIFI_SCAN_LIST_SIZE 10
 
+/* Build stamp (compile-time) shown in captive portal UI */
+#define BUILD_TIMESTAMP (__DATE__ " " __TIME__)
+
 /* State */
 static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
@@ -46,8 +50,8 @@ static httpd_handle_t s_httpd = NULL;
 static esp_netif_t *s_sta_netif = NULL;
 static esp_netif_t *s_ap_netif = NULL;
 
-/* HTML for captive portal */
-static const char CAPTIVE_PORTAL_HTML[] =
+/* HTML for captive portal (served as chunks so '%' in CSS doesn't break printf formatting) */
+static const char CAPTIVE_PORTAL_HTML_PREFIX[] =
     "<!DOCTYPE html>"
     "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
     "<title>Flipper Bridge Setup</title>"
@@ -70,6 +74,10 @@ static const char CAPTIVE_PORTAL_HTML[] =
     "<div class='container'>"
     "<h1>&#x1F42C; Flipper Bridge</h1>"
     "<p>Configure WiFi connection for TCP-UART bridge</p>"
+    "<p style='font-size:12px;opacity:0.8;margin-top:-8px'>Build: ";
+
+static const char CAPTIVE_PORTAL_HTML_SUFFIX[] =
+    "</p>"
     "<form action='/connect' method='POST'>"
     "<label>WiFi Network (SSID):</label>"
     "<input type='text' name='ssid' id='ssid' required maxlength='32'>"
@@ -216,7 +224,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 /* HTTP handlers for captive portal */
 static esp_err_t http_get_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html");
-    httpd_resp_send(req, CAPTIVE_PORTAL_HTML, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_sendstr_chunk(req, CAPTIVE_PORTAL_HTML_PREFIX);
+    httpd_resp_sendstr_chunk(req, BUILD_TIMESTAMP);
+    httpd_resp_sendstr_chunk(req, CAPTIVE_PORTAL_HTML_SUFFIX);
+    httpd_resp_sendstr_chunk(req, NULL); /* end response */
     return ESP_OK;
 }
 
