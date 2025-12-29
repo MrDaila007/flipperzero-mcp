@@ -32,6 +32,32 @@ flipper-mcp
 
 The server communicates over stdio (MCP) and will auto-discover built-in modules at startup.
 
+### Quick start with Claude Desktop (USB-only)
+
+1. Connect your Flipper Zero via USB.
+2. Add **one** MCP server entry to Claude Desktop config:
+   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Windows**: `%APPDATA%\\Claude\\claude_desktop_config.json`
+   - **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "flipper-zero": {
+      "command": "python3",
+      "args": ["-m", "flipper_mcp.cli.main"],
+      "cwd": "/path/to/flipperzero-mcp",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "FLIPPER_TRANSPORT": "usb"
+      }
+    }
+  }
+}
+```
+
+3. Restart Claude Desktop and ask: “What tools do you have available?”
+
 ## Configuration
 
 The CLI currently uses environment variables for configuration:
