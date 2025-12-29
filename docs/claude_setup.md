@@ -197,8 +197,10 @@ The MCP server supports various configuration options through environment variab
 The server currently reads configuration from environment variables:
 
 ```bash
-# Set transport type (usb, wifi, bluetooth/ble)
-export FLIPPER_TRANSPORT=usb
+# Transport selection
+# - Default (recommended): auto (USB-first, WiFi fallback if FLIPPER_WIFI_HOST is set)
+# - Alternatives: usb, wifi, bluetooth/ble
+# export FLIPPER_TRANSPORT=auto
 
 # Override USB serial device path (only used for FLIPPER_TRANSPORT=usb)
 export FLIPPER_PORT=/dev/ttyACM0
@@ -206,10 +208,38 @@ export FLIPPER_PORT=/dev/ttyACM0
 
 Notes:
 
-- The current CLI implementation only wires `FLIPPER_TRANSPORT` and `FLIPPER_PORT` into the runtime configuration (`src/flipper_mcp/core/server.py`). If you need deeper configuration (WiFi host/port, Bluetooth address), update the `config` dict in `flipper_mcp.core.server.main()` or add CLI/config-file support.
+- WiFi host/port (`FLIPPER_WIFI_HOST`, `FLIPPER_WIFI_PORT`) are supported by the default server entry point in `src/flipper_mcp/core/server.py`.
 - Additional RPC debugging controls:
   - `FLIPPER_DEBUG`: enable protobuf RPC debug logs (`1`, `true`, `yes`, `on`)
   - `FLIPPER_FORCE_START_RPC_SESSION`: always send `start_rpc_session` on connect (`1`, `true`, `yes`, `on`)
+
+## USB by default, optional WiFi fallback (single MCP config)
+
+You should only need **one** Claude Desktop MCP server entry.
+
+- **Default behavior** (no transport env var set): the server tries **USB first**
+- If USB is not available and `FLIPPER_WIFI_HOST` is set, the server automatically tries **WiFi**
+
+Example Claude Desktop config (single server entry):
+
+```json
+{
+  "mcpServers": {
+    "flipper-zero": {
+      "command": "python3",
+      "args": ["-m", "flipper_mcp.cli.main"],
+      "cwd": "/path/to/flipperzero-mcp",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "FLIPPER_WIFI_HOST": "192.168.1.100",
+        "FLIPPER_WIFI_PORT": "8080"
+      }
+    }
+  }
+}
+```
+
+If you don't use WiFi, omit the `FLIPPER_WIFI_HOST`/`FLIPPER_WIFI_PORT` entries and USB will be used.
 
 ## Verifying the Setup
 

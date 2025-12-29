@@ -36,13 +36,20 @@ The server communicates over stdio (MCP) and will auto-discover built-in modules
 
 The CLI currently uses environment variables for configuration:
 
-- `FLIPPER_TRANSPORT`: `usb` (default), `wifi`, `bluetooth`/`ble`
+- `FLIPPER_TRANSPORT`: `auto` (default), `usb`, `wifi`, `bluetooth`/`ble`
 - `FLIPPER_PORT`: override the USB serial device path (only used for `usb`)
 - `FLIPPER_WIFI_HOST`: Flipper WiFi dev board host/IP (only used for `wifi`)
 - `FLIPPER_WIFI_PORT`: Flipper WiFi dev board TCP port (only used for `wifi`)
 - `FLIPPER_DEBUG`: enable protobuf RPC debug logging (`1`, `true`, `yes`, `on`)
 - `FLIPPER_FORCE_START_RPC_SESSION`: force sending `start_rpc_session` on connect (`1`, `true`, `yes`, `on`)
 - `FLIPPER_MCP_ALLOW_STUB_MODE`: **DEV ONLY**. If enabled (`1`, `true`, `yes`, `on`), the server will run in stub mode when it cannot connect to hardware. Default: disabled.
+
+### Default behavior (recommended): one MCP config, USB-first with optional WiFi fallback
+
+By default (`FLIPPER_TRANSPORT` unset), the server uses **auto mode**:
+
+- It **tries USB first**
+- If USB is not available and `FLIPPER_WIFI_HOST` is set, it **falls back to WiFi**
 
 Examples:
 
@@ -55,6 +62,11 @@ flipper-mcp
 # Use WiFi transport
 export FLIPPER_TRANSPORT=wifi
 export FLIPPER_WIFI_HOST=192.168.1.1
+export FLIPPER_WIFI_PORT=8080
+flipper-mcp
+
+# Auto mode (default): try USB, fall back to WiFi if FLIPPER_WIFI_HOST is set
+export FLIPPER_WIFI_HOST=192.168.1.100
 export FLIPPER_WIFI_PORT=8080
 flipper-mcp
 ```
@@ -94,7 +106,7 @@ See `docs/claude_setup.md`.
 
 ## Contributing
 
-We welcome contributions! This project is **pro-AI-assisted coding and engineering** - we encourage and welcome contributions that leverage AI tools like GitHub Copilot, ChatGPT, Cursor, or any other AI coding assistants. If you used AI assistance in your contribution, that's great! Please mention it in your pull request.
+We welcome contributions! This project is **pro-AI-assisted coding and engineering** - we encourage and welcome contributions that leverage AI tools like Claude Code, GitHub Copilot, ChatGPT, Cursor, or any other AI coding assistants. If you used AI assistance in your contribution, that's great! Please mention it in your pull request.
 
 See `CONTRIBUTING.md` and `docs/module_development.md`.
 

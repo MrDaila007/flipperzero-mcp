@@ -4,6 +4,7 @@ Transports implement the byte-oriented connection to the Flipper device.
 
 ## Implementations
 
+- `AutoTransport`: selects a transport at runtime (USB-first, WiFi fallback when configured)
 - `USBTransport`: serial over USB CDC (auto-detects Flipper VID:PID when possible)
 - `WiFiTransport`: TCP socket transport (host/port are configured via the server config dict)
 - `BluetoothTransport`: stub transport (not implemented)

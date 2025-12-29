@@ -16,10 +16,17 @@ Runs the same entry point via Python module execution.
 
 The default server entry point (`flipper_mcp.core.server.main`) reads:
 
-- `FLIPPER_TRANSPORT`: transport type (`usb` default, `wifi`, `bluetooth`/`ble`)
+- `FLIPPER_TRANSPORT`: transport type (`auto` default, `usb`, `wifi`, `bluetooth`/`ble`)
 - `FLIPPER_PORT`: override USB serial device path (only used when `FLIPPER_TRANSPORT=usb`)
 - `FLIPPER_DEBUG`: enable protobuf RPC debug logs (`1`, `true`, `yes`, `on`)
 - `FLIPPER_FORCE_START_RPC_SESSION`: always send the CLI command `start_rpc_session` before protobuf RPC (`1`, `true`, `yes`, `on`)
+
+### Auto transport selection
+
+When `FLIPPER_TRANSPORT` is unset (default `auto`):
+
+- USB is tried first
+- WiFi is only attempted if `FLIPPER_WIFI_HOST` is set
 
 ## Core API
 

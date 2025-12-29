@@ -97,7 +97,11 @@ class FlipperMCPServer:
                 if not self.flipper or not self.flipper.connected:
                     return [TextContent(
                         type="text",
-                        text="❌ Flipper Zero not connected. Please ensure the device is connected."
+                        text=(
+                            "❌ Flipper Zero not connected.\n"
+                            "Ensure the device is connected via USB, or set up WiFi and configure `FLIPPER_WIFI_HOST`.\n"
+                            "Use `flipper_connection_health` to check status, then `flipper_connection_reconnect` to retry."
+                        )
                     )]
 
             # Connection tools are allowed even if disconnected; still require flipper object.
@@ -300,14 +304,18 @@ async def main() -> None:
     env_wifi_port = os.environ.get("FLIPPER_WIFI_PORT")
     config = {
         "transport": {
-            "type": env_transport or "usb",  # or "wifi", "bluetooth"
+            # Default to auto so a single MCP client configuration can work across USB and WiFi.
+            # Auto selection policy: prefer USB, fall back to WiFi only if FLIPPER_WIFI_HOST is set.
+            "type": env_transport or "auto",  # or "usb", "wifi", "bluetooth"
             "usb": {
                 # Auto-detect if not specified; can be overridden via FLIPPER_PORT
                 **({"port": env_port} if env_port else {}),
                 "baudrate": 115200
             },
             "wifi": {
-                "host": env_wifi_host or "192.168.1.1",
+                # IMPORTANT: do not assume a WiFi host by default.
+                # WiFi should only be considered "configured" when FLIPPER_WIFI_HOST is set.
+                **({"host": env_wifi_host} if env_wifi_host else {}),
                 "port": int(env_wifi_port) if env_wifi_port else 8080
             },
             "bluetooth": {

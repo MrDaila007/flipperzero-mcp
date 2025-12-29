@@ -2,12 +2,14 @@
 
 from typing import Dict, Type
 from .base import FlipperTransport
+from .auto import AutoTransport
 from .usb import USBTransport
 from .wifi import WiFiTransport
 from .bluetooth import BluetoothTransport
 
 __all__ = [
     "FlipperTransport",
+    "AutoTransport",
     "USBTransport", 
     "WiFiTransport",
     "BluetoothTransport",
@@ -16,6 +18,7 @@ __all__ = [
 
 # Transport registry
 TRANSPORTS: Dict[str, Type[FlipperTransport]] = {
+    "auto": AutoTransport,
     "usb": USBTransport,
     "wifi": WiFiTransport,
     "bluetooth": BluetoothTransport,
@@ -46,7 +49,11 @@ def get_transport(transport_type: str, config: dict) -> FlipperTransport:
         )
     
     # Get transport-specific config
-    transport_config = config.get("transport", {}).get(transport_type, {})
+    if transport_type == "auto":
+        # Auto needs access to both usb/wifi sub-configs.
+        transport_config = config.get("transport", {}) or {}
+    else:
+        transport_config = config.get("transport", {}).get(transport_type, {}) or {}
     
     # Create and return transport
     transport_class = TRANSPORTS[transport_type]
