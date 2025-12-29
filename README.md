@@ -94,6 +94,8 @@ See `docs/claude_setup.md`.
 
 ## Contributing
 
+We welcome contributions! This project is **pro-AI-assisted coding and engineering** - we encourage and welcome contributions that leverage AI tools like GitHub Copilot, ChatGPT, Cursor, or any other AI coding assistants. If you used AI assistance in your contribution, that's great! Please mention it in your pull request.
+
 See `CONTRIBUTING.md` and `docs/module_development.md`.
 
 ## License

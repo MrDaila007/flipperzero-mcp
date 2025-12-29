@@ -2,6 +2,17 @@
 
 Thank you for your interest in contributing to Flipper Zero MCP! This guide will help you get started.
 
+## AI-Assisted Coding
+
+This project is **pro-AI-assisted coding and engineering** - we encourage and welcome contributions that leverage AI tools like Claude Code, GitHub Copilot, ChatGPT, Cursor, or any other AI coding assistants. If you used AI assistance in your contribution, that's great! Please mention it in your pull request.
+
+AI tools can be particularly helpful for:
+- Generating boilerplate code for new modules
+- Writing tests and test fixtures
+- Refactoring and code improvements
+- Documentation and docstring generation
+- Debugging and error handling patterns
+
 ## 📋 Table of Contents
 
 - [Code of Conduct](#code-of-conduct)
