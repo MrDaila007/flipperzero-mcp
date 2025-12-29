@@ -15,3 +15,4 @@
 If the transport connection fails, the server enables a stub mode flag and forces `FlipperClient.connected = True` so that MCP clients can still list tools and exercise module logic. Hardware-backed operations may still fail depending on which APIs are used.
 
 
+

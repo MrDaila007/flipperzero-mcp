@@ -16,3 +16,4 @@ Transports implement the byte-oriented connection to the Flipper device.
 - a receive buffer (`_rx_buffer`) and `clear_receive_buffer()`
 
 
+

@@ -40,3 +40,4 @@ Important details implemented in `ProtobufRPC`:
 - `FLIPPER_FORCE_START_RPC_SESSION`: force sending `start_rpc_session` even if probing suggests RPC mode is already active
 
 
+

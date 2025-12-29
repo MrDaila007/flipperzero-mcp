@@ -27,3 +27,4 @@ Each module is a Python package containing a `module.py` file.
 - **SD card**: modules that write to `/ext/*` should check SD card availability and provide actionable error messages
 
 
+
