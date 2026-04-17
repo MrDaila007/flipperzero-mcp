@@ -83,7 +83,7 @@ class USBTransport(FlipperTransport):
         if detected_ports:
             device, port = detected_ports[0]
             print(f"   Detected Flipper Zero at {device}", file=sys.stderr)
-            return device
+            return str(device)
         
         # Platform-specific fallback
         if system == "Darwin":
@@ -169,7 +169,7 @@ class USBTransport(FlipperTransport):
                 self.serial.read,
                 4096  # Max bytes to read
             )
-            return data
+            return bytes(data)
         finally:
             self.serial.timeout = old_timeout
     

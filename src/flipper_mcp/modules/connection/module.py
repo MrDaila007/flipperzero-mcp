@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, List, Sequence
+from typing import Any, Dict, List, Sequence, cast
 
 from mcp.types import Tool, TextContent
 
@@ -84,9 +84,9 @@ class ConnectionModule(FlipperModule):
 
         return [TextContent(type="text", text=f"❌ Error: Unknown connection tool '{tool_name}'")]
 
-    async def _health(self, probe_rpc: bool) -> dict[str, Any]:
+    async def _health(self, probe_rpc: bool) -> Dict[str, Any]:
         try:
-            return await self.flipper.get_connection_health(probe_rpc=probe_rpc)
+            return cast(Dict[str, Any], await self.flipper.get_connection_health(probe_rpc=probe_rpc))
         except Exception as e:
             # Even health should never crash.
             return {
@@ -99,7 +99,7 @@ class ConnectionModule(FlipperModule):
                 "last_error": str(e),
             }
 
-    async def _reconnect_and_health(self, probe_rpc: bool) -> dict[str, Any]:
+    async def _reconnect_and_health(self, probe_rpc: bool) -> Dict[str, Any]:
         # In stub mode, reconnect is meaningless; still return health.
         if bool(getattr(self.flipper, "stub_mode", False)):
             h = await self._health(probe_rpc=probe_rpc)

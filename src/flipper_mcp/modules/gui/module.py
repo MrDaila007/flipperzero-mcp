@@ -44,7 +44,7 @@ def _raw_to_png(data: bytes, scale: int = 2) -> bytes:
 
     img = Image.frombytes("1", (128, 64), rev)
     if scale > 1:
-        img = img.resize((128 * scale, 64 * scale), Image.NEAREST)
+        img = img.resize((128 * scale, 64 * scale), Image.Resampling.NEAREST)
 
     # Convert to RGB palette (white background, black pixels) for nicer PNG
     rgb = Image.new("RGB", img.size, (255, 255, 255))
@@ -184,7 +184,7 @@ class GuiModule(FlipperModule):
 
     # ── Tool implementations ──────────────────────────────────────────────────
 
-    def _get_rpc(self):
+    def _get_rpc(self) -> Any:
         rpc = self.flipper.rpc
         if rpc and rpc.protobuf_rpc:
             return rpc.protobuf_rpc

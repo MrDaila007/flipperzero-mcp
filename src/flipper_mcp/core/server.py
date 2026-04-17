@@ -131,6 +131,7 @@ class FlipperMCPServer:
                             ),
                         )]
             
+            assert self.registry is not None
             try:
                 result = await self.registry.route_tool_call(name, arguments)
             except Exception as e:
@@ -138,6 +139,7 @@ class FlipperMCPServer:
                 if name not in always_allowed_tools and _looks_like_disconnect(str(e)):
                     if await _attempt_reconnect_once():
                         try:
+                            assert self.registry is not None
                             result = await self.registry.route_tool_call(name, arguments)
                         except Exception as e2:
                             return [TextContent(type="text", text=f"❌ Error executing tool: {str(e2)}")]
@@ -157,6 +159,7 @@ class FlipperMCPServer:
                 joined = "\n".join([getattr(x, "text", "") for x in result])
                 if _looks_like_disconnect(joined):
                     if await _attempt_reconnect_once():
+                        assert self.registry is not None
                         retry = await self.registry.route_tool_call(name, arguments)
                         return retry
                     return [TextContent(

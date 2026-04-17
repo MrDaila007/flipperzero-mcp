@@ -12,7 +12,7 @@ class DuckyScriptGenerator:
     LLM-based generation or template matching.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize generator with templates."""
         self.templates: Dict[str, Callable[[str], str]] = {
             "windows": self._generate_windows,

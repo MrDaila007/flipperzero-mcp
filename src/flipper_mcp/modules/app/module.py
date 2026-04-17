@@ -159,7 +159,7 @@ class AppModule(FlipperModule):
 
     # ── Tool implementations ──────────────────────────────────────────────────
 
-    def _get_rpc(self):
+    def _get_rpc(self) -> Any:
         rpc = self.flipper.rpc
         if rpc and rpc.protobuf_rpc:
             return rpc.protobuf_rpc

@@ -20,7 +20,7 @@ class ScriptValidator:
     This is a basic implementation - production validators should be more sophisticated.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize validator with dangerous patterns."""
         self.dangerous_patterns = [
             # System destruction

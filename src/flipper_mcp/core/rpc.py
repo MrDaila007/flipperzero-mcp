@@ -275,7 +275,7 @@ class FlipperRPC:
             if response:
                 try:
                     result = json.loads(response.decode('utf-8', errors='ignore'))
-                    return result.get("value")
+                    return str(result.get("value")) if result.get("value") is not None else None
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     text = response.decode('utf-8', errors='ignore').strip()
                     if text and text != "":
@@ -581,7 +581,7 @@ class FlipperRPC:
                 return False
         return False
 
-    async def storage_stat(self, path: str):
+    async def storage_stat(self, path: str) -> Optional[Dict[str, Any]]:
         self._ensure_protobuf_rpc()
         if self.protobuf_rpc:
             try:
@@ -590,7 +590,7 @@ class FlipperRPC:
                 pass
         return None
 
-    async def storage_md5sum(self, path: str):
+    async def storage_md5sum(self, path: str) -> Optional[str]:
         self._ensure_protobuf_rpc()
         if self.protobuf_rpc:
             try:
@@ -626,7 +626,7 @@ class FlipperRPC:
                 pass
         return False
 
-    async def app_lock_status(self):
+    async def app_lock_status(self) -> Optional[bool]:
         self._ensure_protobuf_rpc()
         if self.protobuf_rpc:
             try:
@@ -635,7 +635,7 @@ class FlipperRPC:
                 pass
         return None
 
-    async def app_get_error(self):
+    async def app_get_error(self) -> Optional[Dict[str, Any]]:
         self._ensure_protobuf_rpc()
         if self.protobuf_rpc:
             try:
@@ -680,7 +680,7 @@ class FlipperRPC:
                 pass
         return False
 
-    async def gui_capture_screen_frame(self, timeout: float = 8.0):
+    async def gui_capture_screen_frame(self, timeout: float = 8.0) -> Optional[Dict[str, Any]]:
         self._ensure_protobuf_rpc()
         if self.protobuf_rpc:
             try:

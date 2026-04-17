@@ -62,6 +62,12 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 
+[[tool.mypy.overrides]]
+# protobuf_rpc uses dynamically imported generated stubs (assigned None at runtime,
+# real types only visible under TYPE_CHECKING). Suppress all attr-defined errors.
+module = "flipper_mcp.core.protobuf_rpc"
+ignore_errors = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
