@@ -14,7 +14,7 @@ from .transport.base import FlipperTransport
 
 # Import generated protobuf classes
 try:
-    from .protobuf_gen import flipper_pb2, system_pb2, property_pb2, storage_pb2, application_pb2
+    from .protobuf_gen import flipper_pb2, system_pb2, property_pb2, storage_pb2, application_pb2, gui_pb2
     PROTOBUF_AVAILABLE = True
 except ImportError:
     PROTOBUF_AVAILABLE = False
@@ -27,6 +27,7 @@ except ImportError:
         property_pb2 = None
         storage_pb2 = None
         application_pb2 = None
+        gui_pb2 = None
 
 
 class ProtobufRPC:
@@ -753,3 +754,355 @@ class ProtobufRPC:
             return bool(main_response and main_response.command_status == flipper_pb2.CommandStatus.OK)
         except Exception:
             return False
+
+    async def storage_stat(self, path: str) -> Optional[Dict[str, Any]]:
+        """Get metadata for a file or directory."""
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._storage_stat_internal(path), timeout=3.0)
+        except Exception:
+            return None
+
+    async def _storage_stat_internal(self, path: str) -> Optional[Dict[str, Any]]:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            req = storage_pb2.StatRequest()
+            req.path = path
+            main_request.storage_stat_request.CopyFrom(req)
+
+            resp = await self._send_rpc_message(main_request)
+            if resp and resp.command_status == flipper_pb2.CommandStatus.OK and resp.HasField("storage_stat_response"):
+                f = resp.storage_stat_response.file
+                ftype = "DIR" if f.type == storage_pb2.File.DIR else "FILE"
+                return {"name": f.name, "type": ftype, "size": int(f.size)}
+        except Exception:
+            pass
+        return None
+
+    async def storage_md5sum(self, path: str) -> Optional[str]:
+        """Compute MD5 checksum of a file on the device."""
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._storage_md5sum_internal(path), timeout=10.0)
+        except Exception:
+            return None
+
+    async def _storage_md5sum_internal(self, path: str) -> Optional[str]:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            req = storage_pb2.Md5sumRequest()
+            req.path = path
+            main_request.storage_md5sum_request.CopyFrom(req)
+
+            resp = await self._send_rpc_message(main_request)
+            if resp and resp.command_status == flipper_pb2.CommandStatus.OK and resp.HasField("storage_md5sum_response"):
+                return resp.storage_md5sum_response.md5sum
+        except Exception:
+            pass
+        return None
+
+    async def storage_rename(self, old_path: str, new_path: str) -> bool:
+        """Rename or move a file/directory."""
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._storage_rename_internal(old_path, new_path), timeout=3.0)
+        except Exception:
+            return False
+
+    async def _storage_rename_internal(self, old_path: str, new_path: str) -> bool:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            req = storage_pb2.RenameRequest()
+            req.old_path = old_path
+            req.new_path = new_path
+            main_request.storage_rename_request.CopyFrom(req)
+
+            resp = await self._send_rpc_message(main_request)
+            return bool(resp and resp.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
+
+    # ── App control ──────────────────────────────────────────────────────────
+
+    async def app_exit(self) -> bool:
+        """Request the currently running application to exit."""
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._app_exit_internal(), timeout=5.0)
+        except Exception:
+            return False
+
+    async def _app_exit_internal(self) -> bool:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            main_request.app_exit_request.CopyFrom(application_pb2.AppExitRequest())
+
+            resp = await self._send_rpc_message(main_request)
+            return bool(resp and resp.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
+
+    async def app_load_file(self, path: str) -> bool:
+        """Instruct the running app to load a file from device storage."""
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._app_load_file_internal(path), timeout=5.0)
+        except Exception:
+            return False
+
+    async def _app_load_file_internal(self, path: str) -> bool:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            req = application_pb2.AppLoadFileRequest()
+            req.path = path
+            main_request.app_load_file_request.CopyFrom(req)
+
+            resp = await self._send_rpc_message(main_request)
+            return bool(resp and resp.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
+
+    async def app_lock_status(self) -> Optional[bool]:
+        """Return True if an application is currently holding the system lock."""
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._app_lock_status_internal(), timeout=3.0)
+        except Exception:
+            return None
+
+    async def _app_lock_status_internal(self) -> Optional[bool]:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            main_request.app_lock_status_request.CopyFrom(application_pb2.LockStatusRequest())
+
+            resp = await self._send_rpc_message(main_request)
+            if resp and resp.command_status == flipper_pb2.CommandStatus.OK and resp.HasField("app_lock_status_response"):
+                return bool(resp.app_lock_status_response.locked)
+        except Exception:
+            pass
+        return None
+
+    async def app_get_error(self) -> Optional[Dict[str, Any]]:
+        """Get the last error code and message from the running application."""
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._app_get_error_internal(), timeout=3.0)
+        except Exception:
+            return None
+
+    async def _app_get_error_internal(self) -> Optional[Dict[str, Any]]:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            main_request.app_get_error_request.CopyFrom(application_pb2.GetErrorRequest())
+
+            resp = await self._send_rpc_message(main_request)
+            if resp and resp.command_status == flipper_pb2.CommandStatus.OK and resp.HasField("app_get_error_response"):
+                return {
+                    "code": int(resp.app_get_error_response.code),
+                    "text": str(resp.app_get_error_response.text),
+                }
+        except Exception:
+            pass
+        return None
+
+    async def app_button_press(self, args: str = "", index: int = 0) -> bool:
+        """Send an application-level button press event."""
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._app_button_press_internal(args, index), timeout=3.0)
+        except Exception:
+            return False
+
+    async def _app_button_press_internal(self, args: str, index: int) -> bool:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            req = application_pb2.AppButtonPressRequest()
+            req.args = args
+            req.index = index
+            main_request.app_button_press_request.CopyFrom(req)
+
+            resp = await self._send_rpc_message(main_request)
+            return bool(resp and resp.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
+
+    async def app_button_release(self) -> bool:
+        """Send an application-level button release event."""
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._app_button_release_internal(), timeout=3.0)
+        except Exception:
+            return False
+
+    async def _app_button_release_internal(self) -> bool:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            main_request.app_button_release_request.CopyFrom(application_pb2.AppButtonReleaseRequest())
+
+            resp = await self._send_rpc_message(main_request)
+            return bool(resp and resp.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
+
+    async def app_data_exchange(self, data: bytes) -> bool:
+        """Send raw bytes to the running application via the DataExchange RPC channel."""
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._app_data_exchange_internal(data), timeout=3.0)
+        except Exception:
+            return False
+
+    async def _app_data_exchange_internal(self, data: bytes) -> bool:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            req = application_pb2.DataExchangeRequest()
+            req.data = data
+            main_request.app_data_exchange_request.CopyFrom(req)
+
+            resp = await self._send_rpc_message(main_request)
+            return bool(resp and resp.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
+
+    # ── GUI / Screen streaming ────────────────────────────────────────────────
+
+    async def gui_start_screen_stream(self) -> bool:
+        """Start receiving screen frames from the device."""
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._gui_start_screen_stream_internal(), timeout=3.0)
+        except Exception:
+            return False
+
+    async def _gui_start_screen_stream_internal(self) -> bool:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            main_request.gui_start_screen_stream_request.CopyFrom(gui_pb2.StartScreenStreamRequest())
+
+            resp = await self._send_rpc_message(main_request)
+            return bool(resp and resp.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
+
+    async def gui_stop_screen_stream(self) -> bool:
+        """Stop receiving screen frames from the device."""
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._gui_stop_screen_stream_internal(), timeout=3.0)
+        except Exception:
+            return False
+
+    async def _gui_stop_screen_stream_internal(self) -> bool:
+        try:
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            main_request.gui_stop_screen_stream_request.CopyFrom(gui_pb2.StopScreenStreamRequest())
+
+            resp = await self._send_rpc_message(main_request)
+            return bool(resp and resp.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
+
+    async def gui_send_input_event(self, key: str, type: str) -> bool:
+        """Send a hardware button input event to the device.
+
+        Args:
+            key: One of UP, DOWN, LEFT, RIGHT, OK, BACK (case-insensitive)
+            type: One of PRESS, RELEASE, SHORT, LONG, REPEAT (case-insensitive)
+        """
+        import asyncio
+        try:
+            return await asyncio.wait_for(
+                self._gui_send_input_event_internal(key.upper(), type.upper()), timeout=3.0
+            )
+        except Exception:
+            return False
+
+    async def _gui_send_input_event_internal(self, key: str, input_type: str) -> bool:
+        try:
+            key_map = {
+                "UP": gui_pb2.UP, "DOWN": gui_pb2.DOWN, "LEFT": gui_pb2.LEFT,
+                "RIGHT": gui_pb2.RIGHT, "OK": gui_pb2.OK, "BACK": gui_pb2.BACK,
+            }
+            type_map = {
+                "PRESS": gui_pb2.PRESS, "RELEASE": gui_pb2.RELEASE, "SHORT": gui_pb2.SHORT,
+                "LONG": gui_pb2.LONG, "REPEAT": gui_pb2.REPEAT,
+            }
+            if key not in key_map or input_type not in type_map:
+                return False
+
+            main_request = flipper_pb2.Main()
+            main_request.command_id = self._get_next_command_id()
+            main_request.has_next = False
+            req = gui_pb2.SendInputEventRequest()
+            req.key = key_map[key]
+            req.type = type_map[input_type]
+            main_request.gui_send_input_event_request.CopyFrom(req)
+
+            resp = await self._send_rpc_message(main_request)
+            return bool(resp and resp.command_status == flipper_pb2.CommandStatus.OK)
+        except Exception:
+            return False
+
+    async def gui_capture_screen_frame(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+        """Start screen stream, capture one frame, stop stream.
+
+        Returns:
+            {"data": bytes (1024 bytes, row-major), "orientation": int} or None
+        """
+        import asyncio
+        try:
+            return await asyncio.wait_for(self._gui_capture_screen_frame_internal(), timeout=timeout)
+        except Exception:
+            return None
+
+    async def _gui_capture_screen_frame_internal(self) -> Optional[Dict[str, Any]]:
+        try:
+            # 1. Start screen stream
+            started = await self._gui_start_screen_stream_internal()
+            if not started:
+                return None
+
+            # 2. Read messages until we find a gui_screen_frame broadcast
+            frame: Optional[Dict[str, Any]] = None
+            for _ in range(30):  # up to 30 messages
+                msg = await self._receive_main_message(timeout=1.5)
+                if msg is None:
+                    break
+                if msg.HasField("gui_screen_frame"):
+                    sf = msg.gui_screen_frame
+                    frame = {"data": bytes(sf.data), "orientation": int(sf.orientation)}
+                    break
+
+            # 3. Stop screen stream (best-effort)
+            await self._gui_stop_screen_stream_internal()
+            return frame
+        except Exception:
+            try:
+                await self._gui_stop_screen_stream_internal()
+            except Exception:
+                pass
+            return None

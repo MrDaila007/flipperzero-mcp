@@ -24,6 +24,7 @@ dependencies = [
     "pyserial>=3.5",
     "protobuf>=4.25.0",
     "pyyaml>=6.0",
+    "pillow>=10.0",
 ]
 
 [project.optional-dependencies]
@@ -66,3 +67,6 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "integration: hardware-gated tests that require a connected Flipper Zero (deselect with -m 'not integration')",
+]

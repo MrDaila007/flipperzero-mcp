@@ -581,6 +581,114 @@ class FlipperRPC:
             except Exception:
                 return False
         return False
+
+    async def storage_stat(self, path: str):
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.storage_stat(path)
+            except Exception:
+                pass
+        return None
+
+    async def storage_md5sum(self, path: str):
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.storage_md5sum(path)
+            except Exception:
+                pass
+        return None
+
+    async def storage_rename(self, old_path: str, new_path: str) -> bool:
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.storage_rename(old_path, new_path)
+            except Exception:
+                pass
+        return False
+
+    async def app_exit(self) -> bool:
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.app_exit()
+            except Exception:
+                pass
+        return False
+
+    async def app_load_file(self, path: str) -> bool:
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.app_load_file(path)
+            except Exception:
+                pass
+        return False
+
+    async def app_lock_status(self):
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.app_lock_status()
+            except Exception:
+                pass
+        return None
+
+    async def app_get_error(self):
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.app_get_error()
+            except Exception:
+                pass
+        return None
+
+    async def app_button_press(self, args: str = "", index: int = 0) -> bool:
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.app_button_press(args=args, index=index)
+            except Exception:
+                pass
+        return False
+
+    async def app_button_release(self) -> bool:
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.app_button_release()
+            except Exception:
+                pass
+        return False
+
+    async def app_data_exchange(self, data: bytes) -> bool:
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.app_data_exchange(data)
+            except Exception:
+                pass
+        return False
+
+    async def gui_send_input_event(self, key: str, input_type: str) -> bool:
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.gui_send_input_event(key, input_type)
+            except Exception:
+                pass
+        return False
+
+    async def gui_capture_screen_frame(self, timeout: float = 8.0):
+        self._ensure_protobuf_rpc()
+        if self.protobuf_rpc:
+            try:
+                return await self.protobuf_rpc.gui_capture_screen_frame(timeout=timeout)
+            except Exception:
+                pass
+        return None
     
     async def _storage_read_via_cli(self, path: str) -> str:
         """
