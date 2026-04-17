@@ -1,5 +1,3 @@
-import struct
-
 import pytest
 
 from flipper_mcp.core.transport.base import FlipperTransport

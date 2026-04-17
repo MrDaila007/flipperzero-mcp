@@ -1,7 +1,7 @@
 """Tests for core module registry."""
 
 import pytest
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock
 from flipper_mcp.core.registry import ModuleRegistry
 from flipper_mcp.modules.base_module import FlipperModule
 from mcp.types import Tool, TextContent
@@ -130,4 +130,4 @@ def test_list_modules(mock_flipper):
     assert len(modules) == 1
     assert modules[0]["name"] == "test"
     assert modules[0]["version"] == "1.0.0"
-    assert modules[0]["enabled"] == True
+    assert modules[0]["enabled"]

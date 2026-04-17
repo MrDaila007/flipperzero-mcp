@@ -10,7 +10,6 @@ back to simplified methods if needed.
 
 import asyncio
 import struct
-import json
 import subprocess
 import shutil
 from typing import Optional, Dict, Any, List
@@ -272,7 +271,7 @@ class FlipperRPC:
         try:
             import json
             payload = json.dumps({"key": key}).encode('utf-8')
-            response = await self.send_command(f"property.get", payload)
+            response = await self.send_command("property.get", payload)
             if response:
                 try:
                     result = json.loads(response.decode('utf-8', errors='ignore'))

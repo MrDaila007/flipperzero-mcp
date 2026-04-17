@@ -332,7 +332,7 @@ class FlipperClient:
                         normalized["serial_number"] = info.get("serial_number") or info.get("serial")
                     
                     return normalized
-            except Exception as e:
+            except Exception:
                 # Log error but continue to fallback
                 pass
         

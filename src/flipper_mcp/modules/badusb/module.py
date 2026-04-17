@@ -709,9 +709,9 @@ class BadUSBModule(FlipperModule):
             result += "=" * 50 + "\n"
             result += f"📄 Generated Script:\n```duckyscript\n{script}\n```\n\n"
             result += "💡 Next steps:\n"
-            result += f"   • Review the script above\n"
+            result += "   • Review the script above\n"
             result += f"   • Use 'badusb_execute' to run: badusb_execute(filename='{filename}', confirm=true)\n"
-            result += f"   • Or edit manually on Flipper Zero\n"
+            result += "   • Or edit manually on Flipper Zero\n"
             
             return [TextContent(type="text", text=result)]
             

@@ -1,7 +1,5 @@
 """Utility functions for Flipper MCP."""
 
-from typing import Any
-
 
 def sanitize_filename(filename: str) -> str:
     """

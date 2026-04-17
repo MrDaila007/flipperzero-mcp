@@ -9,7 +9,7 @@ Uses generated protobuf code from proto/ directory.
 
 import os
 import sys
-from typing import Optional, Dict, Any, List, TYPE_CHECKING
+from typing import Optional, Dict, Any, TYPE_CHECKING
 from .transport.base import FlipperTransport
 
 # Import generated protobuf classes
